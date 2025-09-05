@@ -34,15 +34,8 @@ pip install -r requirements.txt
 
 ## 🎯 실행 방법
 
-### 1. 개선된 시선 추적 (권장)
-```bash
-python main_improved.py
-```
-- 실시간 조정 가능한 스케일
-- 디버그 뷰 지원
-- 머리 거리 자동 보정
 
-### 2. 문맥 이해도 측정
+###  문맥 이해도 측정(이거실행하면됨)
 ```bash
 python test_comprehension.py
 ```
