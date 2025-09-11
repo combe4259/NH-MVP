@@ -1,21 +1,21 @@
 """
-실시간 DAiSEE 기반 얼굴 이해도 추적
-웹캠에서 실시간으로 engagement, confusion, frustration, boredom 레벨 예측
+실시간 DAiSEE 기반 얼굴 이해도 추적 - HuggingFace 버전
+HuggingFace에서 모델을 다운로드하여 사용
 """
 
 import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
 import torchvision.transforms as transforms
 import numpy as np
 from collections import deque
 import time
 import os
 import mediapipe as mp
+from huggingface_hub import hf_hub_download
 
-# GPU 설정
+# GPU 설정 (Mac M3 Pro의 경우 MPS 사용)
 if torch.cuda.is_available():
     device = torch.device("cuda")
 elif torch.backends.mps.is_available():
@@ -25,105 +25,56 @@ else:
 print(f"Using device: {device}")
 
 
-class DAiSEECNNLSTM(nn.Module):
-    """CNN-LSTM 모델 """
+class RealtimeDAiSEETrackerHF:
+    """실시간 DAiSEE 기반 추적기 - HuggingFace 버전"""
     
-    def __init__(self, hidden_dim=256, num_layers=2):
-        super(DAiSEECNNLSTM, self).__init__()
-        
-        # MobileNetV2 백본
-        self.cnn = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
-        self.cnn.classifier = nn.Identity()
-        self.feature_dim = 1280
-        
-        # 일부 레이어 고정
-        for param in list(self.cnn.parameters())[:-10]:
-            param.requires_grad = False
-        
-        # LSTM
-        self.lstm = nn.LSTM(
-            input_size=self.feature_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=0.3 if num_layers > 1 else 0
-        )
-        
-        # Attention
-        self.attention = nn.Sequential(
-            nn.Linear(hidden_dim, 128),
-            nn.Tanh(),
-            nn.Linear(128, 1),
-            nn.Softmax(dim=1)
-        )
-        
-        # 분류 헤드
-        self.classifiers = nn.ModuleDict({
-            'engagement': nn.Linear(hidden_dim, 4),
-            'confusion': nn.Linear(hidden_dim, 4),
-            'frustration': nn.Linear(hidden_dim, 4),
-            'boredom': nn.Linear(hidden_dim, 4)
-        })
-        
-        self.dropout = nn.Dropout(0.4)
-    
-    def forward(self, x):
-        batch_size, seq_len, c, h, w = x.size()
-        
-        # CNN 특징 추출
-        x = x.view(-1, c, h, w)
-        features = self.cnn(x)
-        features = features.view(batch_size, seq_len, -1)
-        
-        # LSTM
-        lstm_out, _ = self.lstm(features)
-        
-        # Attention
-        attention_weights = self.attention(lstm_out)
-        attended = torch.sum(lstm_out * attention_weights, dim=1)
-        
-        # Dropout
-        attended = self.dropout(attended)
-        
-        # 분류
-        outputs = {}
-        for name, classifier in self.classifiers.items():
-            outputs[name] = classifier(attended)
-        
-        return outputs
-
-
-class RealtimeDAiSEETracker:
-    """실시간 DAiSEE 기반 추적기"""
-    
-    def __init__(self, model_path='daisee_local_model.pth', 
+    def __init__(self, 
+                 repo_id='combe4259/face-comprehension',
                  sequence_length=30, 
                  buffer_size=30,
-                 prediction_interval=0.5):
+                 prediction_interval=0.5,
+                 cache_dir='./model_cache'):
         """
         Args:
-            model_path: 학습된 모델 경로
+            repo_id: HuggingFace 모델 레포지토리 ID
             sequence_length: 모델에 입력할 프레임 수
             buffer_size: 버퍼 크기
             prediction_interval: 예측 주기 (초)
+            cache_dir: 모델 캐시 디렉토리
         """
         self.sequence_length = sequence_length
         self.buffer_size = buffer_size
         self.prediction_interval = prediction_interval
+        self.repo_id = repo_id
         
         # 프레임 버퍼 (deque로 자동으로 오래된 프레임 제거)
         self.frame_buffer = deque(maxlen=buffer_size)
         
-        # 모델 로드
-        print(f"Loading model from {model_path}...")
-        self.model = DAiSEECNNLSTM().to(device)
-        
-        if os.path.exists(model_path):
-            self.model.load_state_dict(torch.load(model_path, map_location=device))
+        # HuggingFace에서 모델 다운로드 및 로드
+        print(f"📥 Downloading model from HuggingFace: {repo_id}")
+        try:
+            # 모델 파일 다운로드
+            model_path = hf_hub_download(
+                repo_id=repo_id,
+                filename="pytorch_model.bin",
+                cache_dir=cache_dir
+            )
+            print(f"✅ Model downloaded to: {model_path}")
+            
+            # 모델 로드 (전체 모델이 저장된 경우)
+            print("Loading model...")
+            self.model = torch.load(model_path, map_location=device)
+            self.model.to(device)
             self.model.eval()
-            print("✅ Model loaded successfully")
-        else:
-            print("⚠️ No trained model found. Using random initialization.")
+            print("✅ Model loaded successfully from HuggingFace")
+            
+        except Exception as e:
+            print(f"❌ Failed to load model from HuggingFace: {e}")
+            print("⚠️ Please check:")
+            print("  1. Repository exists: https://huggingface.co/" + repo_id)
+            print("  2. File 'pytorch_model.bin' exists in the repository")
+            print("  3. You have internet connection")
+            raise e
         
         # 전처리 변환
         self.transform = transforms.Compose([
@@ -298,15 +249,19 @@ class RealtimeDAiSEETracker:
         
         # 배경 박스 (반투명)
         overlay = frame.copy()
-        cv2.rectangle(overlay, (10, 10), (350, 180), (0, 0, 0), -1)
+        cv2.rectangle(overlay, (10, 10), (350, 200), (0, 0, 0), -1)
         frame = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
         
         # 타이틀
         cv2.putText(frame, "DAiSEE Emotion Analysis", 
                    (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
+        # HuggingFace 모델 정보
+        cv2.putText(frame, f"Model: {self.repo_id}", 
+                   (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        
         # 각 감정 표시
-        y_offset = 65
+        y_offset = 85
         colors = {
             'engagement': (0, 255, 0),   # 녹색
             'confusion': (0, 165, 255),   # 주황색
@@ -341,7 +296,7 @@ class RealtimeDAiSEETracker:
         # FPS 및 버퍼 상태
         buffer_fill = len(self.frame_buffer)
         cv2.putText(frame, f"Buffer: {buffer_fill}/{self.buffer_size}", 
-                   (20, 160), cv2.FONT_HERSHEY_SIMPLEX, 
+                   (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 
                    0.4, (200, 200, 200), 1)
         
         return frame
@@ -351,16 +306,20 @@ def main():
     """메인 실행 함수"""
     
     print("=" * 50)
-    print("🎥 Realtime DAiSEE Emotion Tracker")
+    print("🎥 Realtime DAiSEE Emotion Tracker (HuggingFace)")
     print("=" * 50)
     
-    # 트래커 초기화
-    tracker = RealtimeDAiSEETracker(
-        model_path='daisee_local_model.pth',
-        sequence_length=30,
-        buffer_size=30,
-        prediction_interval=0.5  # 0.5초마다 예측
-    )
+    # 트래커 초기화 (HuggingFace 모델 사용)
+    try:
+        tracker = RealtimeDAiSEETrackerHF(
+            repo_id='combe4259/face-comprehension',  # HuggingFace 모델
+            sequence_length=30,
+            buffer_size=30,
+            prediction_interval=0.5  # 0.5초마다 예측
+        )
+    except Exception as e:
+        print(f"❌ Failed to initialize tracker: {e}")
+        return
     
     # 웹캠 시작
     cap = cv2.VideoCapture(0)
@@ -398,7 +357,7 @@ def main():
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         
         # 프레임 표시
-        cv2.imshow('DAiSEE Realtime Tracker', frame)
+        cv2.imshow('DAiSEE Realtime Tracker (HuggingFace)', frame)
         
         # 'q' 키로 종료
         if cv2.waitKey(1) & 0xFF == ord('q'):
