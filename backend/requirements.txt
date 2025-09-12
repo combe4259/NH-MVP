@@ -1,0 +1,49 @@
+# FastAPI and ASGI server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Data validation and serialization
+pydantic==2.5.0
+
+# HTTP client for external API calls
+httpx==0.25.2
+requests==2.31.0
+
+# JSON handling
+orjson==3.9.10
+
+# Date and time handling
+python-dateutil==2.8.2
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Testing (optional, for development)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Development tools (optional)
+black==23.11.0
+flake8==6.1.0
+
+# CORS support (already included in FastAPI)
+# fastapi already includes starlette which has CORS middleware
+
+# Math and scientific computing (for eyetracking algorithms)
+numpy==1.24.4
+scipy==1.11.4
+
+# Image processing (if needed for future eyetracking)
+# opencv-python==4.8.1.78
+# mediapipe==0.10.8
+
+# Optional: For production deployment
+gunicorn==21.2.0
+prometheus-client==0.19.0

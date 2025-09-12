@@ -17,6 +17,7 @@ const Home: React.FC = () => {
   const [scrollPosition, setScrollPosition] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showConsultationCenter, setShowConsultationCenter] = useState(false);
+  const [selectedConsultationId, setSelectedConsultationId] = useState<string | null>(null);
   
   const [consultations] = useState<ConsultationRecord[]>([
     {
@@ -47,6 +48,15 @@ const Home: React.FC = () => {
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollPosition(e.currentTarget.scrollTop);
   };
+
+  if (selectedConsultationId) {
+    return (
+      <Overview 
+        consultationId={selectedConsultationId}
+        onBack={() => setSelectedConsultationId(null)}
+      />
+    );
+  }
 
   if (showConsultationCenter) {
     return <Consulting onBack={() => setShowConsultationCenter(false)} />;
@@ -139,7 +149,11 @@ const Home: React.FC = () => {
             
             <div className="divide-y divide-gray-100">
               {consultations.map((consultation) => (
-                <div key={consultation.id} className="px-4 py-4">
+                <div 
+                  key={consultation.id} 
+                  className="px-4 py-4 cursor-pointer hover:bg-gray-50"
+                  onClick={() => setSelectedConsultationId(consultation.id)}
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3 flex-1">
                       <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center flex-shrink-0">
