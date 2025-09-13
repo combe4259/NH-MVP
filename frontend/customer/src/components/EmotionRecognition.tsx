@@ -153,7 +153,7 @@ const EmotionRecognition: React.FC<EmotionRecognitionProps> = ({ isTracking, onE
           <div key={emotion} className="score-item">
             <div className="score-header">
               <span className="score-label">{emotion}</span>
-              <span className="score-value">{Math.round(score * 100)}%</span>
+              <span className="score-value">{(score * 100).toFixed(1)}%</span>
             </div>
             <div className="score-bar">
               <div 
