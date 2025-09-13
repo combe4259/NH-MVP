@@ -10,12 +10,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 try:
     from eyetrack.gaze_tracker import EyeGazeTracker, GazeData
     from eyetrack.comprehension_analyzer import ComprehensionAnalyzer
+    from eyetrack.hybrid_analyzer import HybridTextAnalyzer, HybridAnalysisResult
     EYETRACK_AVAILABLE = True
+    print("Eyetrack 모듈들이 성공적으로 로드되었습니다")
 except ImportError as e:
     print(f"Warning: eyetrack 모듈을 찾을 수 없습니다: {e}")
     EyeGazeTracker = None
     GazeData = None
     ComprehensionAnalyzer = None
+    HybridTextAnalyzer = None
+    HybridAnalysisResult = None
     EYETRACK_AVAILABLE = False
 
 # AI 모델 매니저 import
@@ -32,7 +36,7 @@ class EyeTrackingService:
     
     def __init__(self):
         self.analyzer = ComprehensionAnalyzer() if ComprehensionAnalyzer else None
-        self.monitor = RealTimeComprehensionMonitor() if RealTimeComprehensionMonitor else None
+        self.hybrid_analyzer = HybridTextAnalyzer() if HybridTextAnalyzer else None
         self.session_data = {}  # consultation_id별 세션 데이터
     
     def get_text_difficulty(self, section_text: str) -> float:
@@ -193,36 +197,66 @@ class EyeTrackingService:
                     'start_time': datetime.now(timezone.utc)
                 }
             
-            self.session_data[consultation_id]['sections'].append({
+            # 세션 데이터 업데이트 (하이브리드 결과 포함)
+            section_data = {
                 'section_name': section_name,
                 'difficulty_score': difficulty_score,
                 'confusion_probability': confusion_probability,
                 'comprehension_level': comprehension_level,
                 'timestamp': datetime.now(timezone.utc)
-            })
+            }
+
+            # 텍스트 분석 결과도 세션에 저장
+            if analysis_data:
+                section_data.update({
+                    'difficult_terms': analysis_data.get('difficult_terms', []),
+                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
+                })
+
+                # 세션 레벨에서도 업데이트
+                self.session_data[consultation_id].update({
+                    'current_section': section_name,
+                    'difficult_terms': analysis_data.get('difficult_terms', []),
+                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
+                })
+
+            self.session_data[consultation_id]['sections'].append(section_data)
             
-            # 7. 하이브리드 분석 추가 (있으면)
-            hybrid_data = {}
-            if hybrid_analyzer:
+            # 7. 텍스트 분석 (문장 + 단어 동시 분석)
+            analysis_data = {}
+            if self.hybrid_analyzer:
                 try:
-                    hybrid_result = hybrid_analyzer.analyze_text_hybrid(section_text)
-                    hybrid_data = {
-                        "difficult_terms": hybrid_result.difficult_terms,
-                        "underlined_sections": hybrid_result.underlined_sections,
-                        "detailed_explanations": hybrid_result.detailed_explanations
+                    analysis_result = self.hybrid_analyzer.analyze_text_hybrid(section_text)
+                    analysis_data = {
+                        "difficult_terms": analysis_result.difficult_terms,
+                        "underlined_sections": analysis_result.underlined_sections,
+                        "detailed_explanations": analysis_result.detailed_explanations,
+                        "overall_difficulty": analysis_result.overall_difficulty,
+                        "comprehension_level": analysis_result.comprehension_level
                     }
+
+                    # 분석 결과로 기존 값들 보완
+                    if analysis_result.overall_difficulty > 0:
+                        difficulty_score = (difficulty_score + analysis_result.overall_difficulty) / 2
+                    if analysis_result.comprehension_level in ['high', 'medium', 'low']:
+                        comprehension_level = analysis_result.comprehension_level
+
                 except Exception as e:
-                    print(f"하이브리드 분석 실패: {e}")
-                    hybrid_data = {
+                    print(f"텍스트 분석 실패: {e}")
+                    analysis_data = {
                         "difficult_terms": [],
                         "underlined_sections": [],
-                        "detailed_explanations": {}
+                        "detailed_explanations": {},
+                        "overall_difficulty": 0.0,
+                        "comprehension_level": "medium"
                     }
             else:
-                hybrid_data = {
+                analysis_data = {
                     "difficult_terms": [],
                     "underlined_sections": [],
-                    "detailed_explanations": {}
+                    "detailed_explanations": {},
+                    "overall_difficulty": 0.0,
+                    "comprehension_level": "medium"
                 }
             
             result = {
@@ -240,8 +274,8 @@ class EyeTrackingService:
                 }
             }
             
-            # 하이브리드 데이터 추가
-            result.update(hybrid_data)
+            # 분석 데이터 추가
+            result.update(analysis_data)
             return result
             
         except Exception as e:
@@ -329,32 +363,43 @@ class EyeTrackingService:
         }
 
     def get_current_confusion_status(self, consultation_id: str) -> Dict:
-        """현재 혼란도 상태 반환"""
+        """현재 혼란도 상태 반환 (프론트엔드 AI 도우미용)"""
         if consultation_id not in self.session_data:
             return {
                 'is_confused': False,
                 'confusion_probability': 0.0,
                 'current_section': '',
-                'ai_suggestion': None
+                'ai_suggestion': None,
+                'difficult_terms': [],
+                'suggested_explanations': []
             }
 
         session = self.session_data[consultation_id]
         confusion_level = session.get('confusion_level', 0.0)
         is_confused = confusion_level > 0.7
 
+        # AI 도우미 제안 생성
         ai_suggestion = None
+        difficult_terms = session.get('difficult_terms', [])
         if is_confused:
+            current_section = session.get('current_section', '현재 섹션')
             ai_suggestion = {
-                'section': session.get('current_section', '현재 섹션'),
-                'explanation': '이 부분이 어려우시다면 직원에게 설명을 요청하세요.',
-                'simpleExample': '복잡한 용어가 포함되어 있을 수 있습니다.'
+                'section': current_section,
+                'explanation': f'{current_section}에서 어려운 부분이 감지되었습니다.',
+                'simpleExample': '전문 용어나 복잡한 조건이 포함되어 있을 수 있습니다.'
             }
+
+            # 어려운 용어가 있으면 구체적인 설명 추가
+            if difficult_terms:
+                ai_suggestion['explanation'] = f"'{difficult_terms[0].get('term', '용어')}'와 같은 금융 용어가 어려울 수 있습니다."
 
         return {
             'is_confused': is_confused,
             'confusion_probability': confusion_level,
             'current_section': session.get('current_section', ''),
-            'ai_suggestion': ai_suggestion
+            'ai_suggestion': ai_suggestion,
+            'difficult_terms': difficult_terms[:3],  # 최대 3개까지
+            'suggested_explanations': session.get('detailed_explanations', {})
         }
 
     def get_reading_progress(self, consultation_id: str) -> Dict:

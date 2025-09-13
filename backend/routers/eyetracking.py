@@ -68,18 +68,31 @@ async def analyze_reading(data: ReadingData):
             logger.error(f"DB 저장 실패: {db_error}")
             # DB 저장 실패해도 분석 결과는 반환
         
-        # 응답 형식에 맞게 변환
-        return AnalysisResponse(
-            status=analysis_result.get('status', 'unknown'),
-            confused_sentences=analysis_result.get('confused_sentences', []),
-            ai_explanation=analysis_result.get('ai_explanation', ''),
-            difficulty_score=analysis_result.get('difficulty_score', 0.5),
-            confusion_probability=analysis_result.get('confusion_probability'),
-            comprehension_level=analysis_result.get('comprehension_level', 'medium'),
-            recommendations=analysis_result.get('recommendations', []),
-            analysis_metadata=analysis_result.get('analysis_metadata'),
-            error_message=analysis_result.get('error_message')
-        )
+        # 프론트엔드 친화적 응답 형식 (텍스트 분석 포함)
+        return {
+            "analysis_status": analysis_result.get('status', 'unknown'),
+            "difficulty_score": analysis_result.get('difficulty_score', 0.5),
+            "confusion_probability": analysis_result.get('confusion_probability', 0.0),
+            "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
+
+            # AI 설명 및 추천
+            "ai_explanation": analysis_result.get('ai_explanation', ''),
+            "recommendations": analysis_result.get('recommendations', []),
+
+            # 텍스트 분석 결과 (프론트엔드 UI용)
+            "difficult_terms": analysis_result.get('difficult_terms', []),
+            "underlined_sections": analysis_result.get('underlined_sections', []),
+            "detailed_explanations": analysis_result.get('detailed_explanations', {}),
+
+            # 혼란 감지 (AI 도우미 트리거용)
+            "confused_sentences": analysis_result.get('confused_sentences', []),
+            "needs_ai_assistance": analysis_result.get('confusion_probability', 0.0) > 0.7,
+
+            # 메타데이터
+            "analysis_metadata": analysis_result.get('analysis_metadata', {}),
+            "timestamp": datetime.now().isoformat(),
+            "error_message": analysis_result.get('error_message')
+        }
         
     except HTTPException:
         raise
