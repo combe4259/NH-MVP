@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import List, Dict
 
 class GemmaTextSimplifier:
-    def __init__(self, hf_token="***REMOVED***"):
+    def __init__(self, hf_token=""):
         """
         Gemma 기반 텍스트 간소화 및 난이도 평가
         """
