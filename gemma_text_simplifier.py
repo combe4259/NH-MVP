@@ -17,7 +17,6 @@ from tqdm import tqdm
 import os
 from datetime import datetime
 from typing import List, Dict
-
 class GemmaTextSimplifier:
     def __init__(self, hf_token=""):
         """
