@@ -33,12 +33,6 @@ interface CustomerData {
   }>;
 }
 
-interface MetricData {
-  label: string;
-  value: number;
-  change: number;
-  trend: 'up' | 'down' | 'stable';
-}
 
 function App() {
   const [customers, setCustomers] = useState<CustomerData[]>([
@@ -132,14 +126,7 @@ function App() {
   ]);
   
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(customers[0]);
-  const [alerts, setAlerts] = useState<Array<{ id: string; message: string; type: string; time: Date; customerId: string }>>([]);
   
-  const [metrics] = useState<MetricData[]>([
-    { label: '활성 상담', value: 3, change: 1, trend: 'up' },
-    { label: '평균 이해도', value: 66, change: -5, trend: 'down' },
-    { label: '위험 고객', value: 1, change: 1, trend: 'up' },
-    { label: '완료 예정', value: 1, change: 0, trend: 'stable' }
-  ]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -149,23 +136,6 @@ function App() {
         emotionState: ['neutral', 'focused', 'confused', 'stressed'][Math.floor(Math.random() * 4)],
         attentionScore: Math.max(0, Math.min(100, customer.attentionScore + (Math.random() - 0.5) * 8))
       })));
-      
-      if (Math.random() > 0.6) {
-        const customerAlerts = [
-          { customer: '김민수', message: '중도해지 조항을 5번째 읽고 있습니다. 즉시 개입 필요', type: 'critical' },
-          { customer: '박정호', message: '이해도 50% 미만 - 상담 방식 변경 권장', type: 'warning' },
-          { customer: '이서연', message: '신청서 작성 단계 진입 - 마무리 지원 필요', type: 'info' }
-        ];
-        const alert = customerAlerts[Math.floor(Math.random() * customerAlerts.length)];
-        const newAlert = {
-          id: Date.now().toString(),
-          message: alert.message,
-          type: alert.type,
-          time: new Date(),
-          customerId: alert.customer
-        };
-        setAlerts(prev => [newAlert, ...prev].slice(0, 8));
-      }
     }, 3000);
 
     return () => clearInterval(interval);
@@ -211,13 +181,6 @@ function App() {
     return labels[emotion] || '평온';
   };
 
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (diff < 60) return `${diff}초 전`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-    return `${Math.floor(diff / 3600)}시간 전`;
-  };
 
   const getDuration = (startTime: Date) => {
     const diff = Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
@@ -247,18 +210,8 @@ function App() {
           <h1 className="dashboard-title">스마트 상담 관리 시스템</h1>
         </div>
         
-        <div className="header-nav">
-          <button className="nav-item active">실시간 모니터링</button>
-          <button className="nav-item">상담 이력</button>
-          <button className="nav-item">성과 분석</button>
-          <button className="nav-item">설정</button>
-        </div>
         
         <div className="header-user">
-          <span className="notifications">
-            <span className="notification-icon">🔔</span>
-            <span className="notification-count">{alerts.filter(a => a.type === 'critical').length}</span>
-          </span>
           <div className="user-info">
             <span className="user-name">김상담 매니저</span>
             <span className="user-role">디지털혁신점</span>
@@ -269,90 +222,67 @@ function App() {
 
       {/* Main Content */}
       <main className="dashboard-main">
-        {/* Metrics Row */}
-        <div className="metrics-row">
-          {metrics.map((metric, index) => (
-            <div key={index} className="metric-card">
-              <div className="metric-header">
-                <span className="metric-label">{metric.label}</span>
-                <span className={`metric-change ${metric.trend}`}>
-                  {metric.trend === 'up' ? '↑' : metric.trend === 'down' ? '↓' : '→'}
-                  {Math.abs(metric.change)}
-                </span>
-              </div>
-              <div className="metric-value">{metric.value}</div>
-              <div className="metric-subtext">
-                {metric.label === '위험 고객' && metric.value > 0 && (
-                  <span className="warning-text">즉시 개입 필요</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
 
         <div className="dashboard-grid">
-          {/* Customer List */}
-          <div className="panel customer-panel">
-            <div className="panel-header">
-              <h2 className="panel-title">진행 중인 상담</h2>
-              <div className="panel-controls">
-                <select className="filter-select">
-                  <option>전체 상담</option>
-                  <option>위험 고객</option>
-                  <option>신규 가입</option>
-                </select>
+          {/* Product Information Panel */}
+          {selectedCustomer && (
+            <div className="panel product-panel">
+              <div className="panel-header">
+                <h2 className="panel-title">진행 중인 상품</h2>
               </div>
-            </div>
-            
-            <div className="customer-list">
-              {customers.map(customer => (
-                <div 
-                  key={customer.id}
-                  className={`customer-item ${selectedCustomer?.id === customer.id ? 'selected' : ''} ${customer.comprehensionLevel < 50 ? 'risk' : ''}`}
-                  onClick={() => setSelectedCustomer(customer)}
-                >
-                  <div className="customer-avatar">
-                    {customer.name.substring(0, 2)}
+              
+              <div className="product-detail-content">
+                <div className="customer-info-header">
+                  <div className="customer-avatar-large">
+                    {selectedCustomer.name.substring(0, 2)}
                   </div>
-                  
-                  <div className="customer-details">
-                    <div className="customer-header-info">
-                      <span className="customer-name">{customer.name}</span>
-                      <span className="product-type">{customer.productType}</span>
-                    </div>
-                    <div className="consultation-progress">
-                      <span className="phase-label">{getPhaseLabel(customer.consultationPhase)}</span>
-                      <div className="progress-bar-mini">
-                        <div className="progress-fill-mini" style={{ width: `${getPhaseProgress(customer.consultationPhase)}%` }}></div>
-                      </div>
-                    </div>
-                    <div className="customer-meta">
-                      <span className="meta-item">{customer.currentSection}</span>
-                      <span className="meta-divider">•</span>
-                      <span className="meta-item">{getDuration(customer.startTime)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="customer-indicators">
-                    <div className="emotion-badge">
-                      {getEmotionIcon(customer.emotionState)}
-                    </div>
-                    <div className={`comprehension-indicator level-${Math.floor(customer.comprehensionLevel / 20)}`}>
-                      {customer.comprehensionLevel}%
-                    </div>
-                    {customer.riskFactors.length > 0 && (
-                      <div className="risk-badge">
-                        <span className="risk-icon">⚠️</span>
-                        <span className="risk-count">{customer.riskFactors.length}</span>
-                      </div>
-                    )}
+                  <div className="customer-basic-info">
+                    <h3 className="customer-name-large">{selectedCustomer.name}</h3>
+                    <span className="customer-product-type">{selectedCustomer.productType}</span>
                   </div>
                 </div>
-              ))}
+                
+                <div className="product-details-full">
+                  <div className="product-name-full">{selectedCustomer.productDetails.name}</div>
+                  <div className="product-specs-full">
+                    <div className="spec-row">
+                      <span className="spec-label">상품 유형</span>
+                      <span className="spec-value">{selectedCustomer.productDetails.type}</span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">가입 금액</span>
+                      <span className="spec-value">{selectedCustomer.productDetails.amount}</span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">가입 기간</span>
+                      <span className="spec-value">{selectedCustomer.productDetails.period}</span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">적용 금리</span>
+                      <span className="spec-value highlight">{selectedCustomer.productDetails.interestRate}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="consultation-status">
+                  <div className="status-header">
+                    <span className="status-label">상담 단계</span>
+                    <span className="status-phase">{getPhaseLabel(selectedCustomer.consultationPhase)}</span>
+                  </div>
+                  <div className="progress-bar-full">
+                    <div className="progress-fill-full" style={{ width: `${getPhaseProgress(selectedCustomer.consultationPhase)}%` }}></div>
+                  </div>
+                  <div className="current-section">
+                    <span className="section-label">현재 읽는 부분</span>
+                    <span className="section-value">{selectedCustomer.currentSection}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Customer Detail */}
+
+          {/* Customer Detail - Center Panel */}
           {selectedCustomer && (
             <div className="panel detail-panel">
               <div className="panel-header">
@@ -364,69 +294,43 @@ function App() {
               </div>
               
               <div className="detail-content">
-                {/* 상품 정보 */}
-                <div className="product-info-card">
-                  <h3 className="section-title">진행 중인 상품</h3>
-                  <div className="product-details">
-                    <div className="product-name">{selectedCustomer.productDetails.name}</div>
-                    <div className="product-specs">
-                      <div className="spec-item">
-                        <span className="spec-label">상품 유형</span>
-                        <span className="spec-value">{selectedCustomer.productDetails.type}</span>
-                      </div>
-                      <div className="spec-item">
-                        <span className="spec-label">가입 금액</span>
-                        <span className="spec-value">{selectedCustomer.productDetails.amount}</span>
-                      </div>
-                      <div className="spec-item">
-                        <span className="spec-label">가입 기간</span>
-                        <span className="spec-value">{selectedCustomer.productDetails.period}</span>
-                      </div>
-                      <div className="spec-item">
-                        <span className="spec-label">적용 금리</span>
-                        <span className="spec-value highlight">{selectedCustomer.productDetails.interestRate}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* 이해도 분석 */}
                 <div className="comprehension-analysis">
                   <h3 className="section-title">실시간 이해도 분석</h3>
-                  <div className="analysis-grid">
-                    <div className="analysis-item">
-                      <div className="analysis-header">
-                        <span className="analysis-label">전체 이해도</span>
-                        <span className={`analysis-value ${selectedCustomer.comprehensionLevel < 50 ? 'danger' : selectedCustomer.comprehensionLevel < 70 ? 'warning' : 'success'}`}>
-                          {selectedCustomer.comprehensionLevel}%
-                        </span>
-                      </div>
-                      <div className="progress-bar-large">
-                        <div 
-                          className="progress-fill-large" 
-                          style={{ 
-                            width: `${selectedCustomer.comprehensionLevel}%`,
-                            backgroundColor: selectedCustomer.comprehensionLevel < 50 ? '#f44336' : selectedCustomer.comprehensionLevel < 70 ? '#ff9800' : '#4caf50'
-                          }}
+                  <div className="circular-analysis">
+                    <div className="circular-chart">
+                      <svg className="progress-ring" width="200" height="200">
+                        <circle
+                          className="progress-ring-circle-bg"
+                          stroke="#e0e0e0"
+                          strokeWidth="12"
+                          fill="transparent"
+                          r="90"
+                          cx="100"
+                          cy="100"
                         />
-                      </div>
-                    </div>
-
-                    <div className="analysis-stats">
-                      <div className="stat-item">
-                        <span className="stat-icon">📖</span>
-                        <span className="stat-value">{selectedCustomer.readingSpeed}</span>
-                        <span className="stat-label">단어/분</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-icon">👁️</span>
-                        <span className="stat-value">{selectedCustomer.attentionScore}%</span>
-                        <span className="stat-label">집중도</span>
-                      </div>
-                      <div className="stat-item">
-                        <span className="stat-icon">{getEmotionIcon(selectedCustomer.emotionState)}</span>
-                        <span className="stat-value">{getEmotionLabel(selectedCustomer.emotionState)}</span>
-                        <span className="stat-label">감정상태</span>
+                        <circle
+                          className="progress-ring-circle"
+                          stroke={selectedCustomer.comprehensionLevel < 50 ? '#f44336' : selectedCustomer.comprehensionLevel < 70 ? '#ff9800' : '#4caf50'}
+                          strokeWidth="12"
+                          fill="transparent"
+                          r="90"
+                          cx="100"
+                          cy="100"
+                          strokeDasharray={`${2 * Math.PI * 90}`}
+                          strokeDashoffset={`${2 * Math.PI * 90 * (1 - selectedCustomer.comprehensionLevel / 100)}`}
+                          strokeLinecap="round"
+                          transform="rotate(-90 100 100)"
+                        />
+                      </svg>
+                      <div className="chart-center">
+                        <div className="emotion-display">
+                          <div className="emotion-icon">{getEmotionIcon(selectedCustomer.emotionState)}</div>
+                          <div className="emotion-label">{getEmotionLabel(selectedCustomer.emotionState)}</div>
+                        </div>
+                        <div className="comprehension-percentage">
+                          {selectedCustomer.comprehensionLevel.toFixed(1)}%
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -496,39 +400,204 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {/* 상담 진행 통계 */}
+                <div className="consultation-stats-card">
+                  <h3 className="section-title">
+                    <span className="title-icon">📊</span>
+                    상담 진행 통계
+                  </h3>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-icon">⏱️</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{getDuration(selectedCustomer.startTime)}</div>
+                        <div className="stat-label">상담 시간</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon">📖</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{selectedCustomer.readingSpeed}</div>
+                        <div className="stat-label">읽기 속도 (단어/분)</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon">👁️</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{selectedCustomer.attentionScore.toFixed(1)}%</div>
+                        <div className="stat-label">집중도</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-icon">🔄</div>
+                      <div className="stat-content">
+                        <div className="stat-value">{selectedCustomer.confusedSections.reduce((total, section) => total + section.returnCount, 0)}</div>
+                        <div className="stat-label">반복 읽기 횟수</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 상담 히스토리 */}
+                <div className="consultation-history-card">
+                  <h3 className="section-title">
+                    <span className="title-icon">📝</span>
+                    상담 히스토리
+                  </h3>
+                  <div className="history-timeline">
+                    <div className="timeline-item completed">
+                      <div className="timeline-marker"></div>
+                      <div className="timeline-content">
+                        <div className="timeline-title">상품 소개 시작</div>
+                        <div className="timeline-time">상담 시작</div>
+                      </div>
+                    </div>
+                    <div className="timeline-item completed">
+                      <div className="timeline-marker"></div>
+                      <div className="timeline-content">
+                        <div className="timeline-title">약관 확인 단계</div>
+                        <div className="timeline-time">5분 후</div>
+                      </div>
+                    </div>
+                    <div className="timeline-item active">
+                      <div className="timeline-marker"></div>
+                      <div className="timeline-content">
+                        <div className="timeline-title">{selectedCustomer.currentSection}</div>
+                        <div className="timeline-time">현재 진행 중</div>
+                      </div>
+                    </div>
+                    <div className="timeline-item">
+                      <div className="timeline-marker"></div>
+                      <div className="timeline-content">
+                        <div className="timeline-title">가입 신청</div>
+                        <div className="timeline-time">예정</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           )}
 
-          {/* Alerts Sidebar */}
-          <div className="panel alerts-panel">
+          {/* Related Products Panel - Right Side */}
+          <div className="panel products-panel">
             <div className="panel-header">
-              <h2 className="panel-title">실시간 알림</h2>
-              <div className="alert-filters">
-                <button className="filter-btn active">전체</button>
-                <button className="filter-btn critical">긴급</button>
-                <button className="filter-btn">일반</button>
+              <h2 className="panel-title">관련 상품</h2>
+              <div className="panel-controls">
+                <select className="filter-select">
+                  <option>전체 상품</option>
+                  <option>정기예금</option>
+                  <option>적금</option>
+                  <option>펀드</option>
+                </select>
               </div>
             </div>
             
-            <div className="alerts-list">
-              {alerts.map(alert => (
-                <div key={alert.id} className={`alert-item ${alert.type}`}>
-                  <div className="alert-header">
-                    <span className="alert-icon">
-                      {alert.type === 'critical' ? '🚨' : alert.type === 'warning' ? '⚠️' : 'ℹ️'}
-                    </span>
-                    <span className="alert-customer">{alert.customerId}</span>
-                    <span className="alert-time">{formatTime(alert.time)}</span>
-                  </div>
-                  <div className="alert-message">{alert.message}</div>
-                  {alert.type === 'critical' && (
-                    <button className="alert-action">즉시 대응</button>
-                  )}
+            <div className="products-list">
+              <div className="product-item">
+                <div className="product-header">
+                  <h3 className="product-name">NH 행복드림 정기예금</h3>
+                  <span className="product-type">정기예금</span>
                 </div>
-              ))}
+                <div className="product-details">
+                  <div className="product-spec">
+                    <span className="spec-label">금리</span>
+                    <span className="spec-value">연 4.0%</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">기간</span>
+                    <span className="spec-value">12개월</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">최소금액</span>
+                    <span className="spec-value">100만원</span>
+                  </div>
+                </div>
+                <div className="product-actions">
+                  <button className="product-btn primary">상세보기</button>
+                  <button className="product-btn">비교하기</button>
+                </div>
+              </div>
+
+              <div className="product-item">
+                <div className="product-header">
+                  <h3 className="product-name">NH 올원 적금</h3>
+                  <span className="product-type">적금</span>
+                </div>
+                <div className="product-details">
+                  <div className="product-spec">
+                    <span className="spec-label">금리</span>
+                    <span className="spec-value">연 4.5%</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">기간</span>
+                    <span className="spec-value">24개월</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">월납입</span>
+                    <span className="spec-value">50만원</span>
+                  </div>
+                </div>
+                <div className="product-actions">
+                  <button className="product-btn primary">상세보기</button>
+                  <button className="product-btn">비교하기</button>
+                </div>
+              </div>
+
+              <div className="product-item">
+                <div className="product-header">
+                  <h3 className="product-name">NH-Amundi 글로벌 펀드</h3>
+                  <span className="product-type">펀드</span>
+                </div>
+                <div className="product-details">
+                  <div className="product-spec">
+                    <span className="spec-label">수익률</span>
+                    <span className="spec-value">연 6.2%</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">위험도</span>
+                    <span className="spec-value">중간</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">최소투자</span>
+                    <span className="spec-value">100만원</span>
+                  </div>
+                </div>
+                <div className="product-actions">
+                  <button className="product-btn primary">상세보기</button>
+                  <button className="product-btn">비교하기</button>
+                </div>
+              </div>
+
+              <div className="product-item">
+                <div className="product-header">
+                  <h3 className="product-name">NH 스마트 적금</h3>
+                  <span className="product-type">적금</span>
+                </div>
+                <div className="product-details">
+                  <div className="product-spec">
+                    <span className="spec-label">금리</span>
+                    <span className="spec-value">연 3.8%</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">기간</span>
+                    <span className="spec-value">12개월</span>
+                  </div>
+                  <div className="product-spec">
+                    <span className="spec-label">월납입</span>
+                    <span className="spec-value">30만원</span>
+                  </div>
+                </div>
+                <div className="product-actions">
+                  <button className="product-btn primary">상세보기</button>
+                  <button className="product-btn">비교하기</button>
+                </div>
+              </div>
             </div>
           </div>
+
         </div>
       </main>
     </div>

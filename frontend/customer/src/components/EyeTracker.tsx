@@ -110,7 +110,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
             </div>
             <div className="info-item">
               <span className="info-label">정확도</span>
-              <span className="info-value">85%</span>
+              <span className="info-value">85.0%</span>
             </div>
           </>
         )}

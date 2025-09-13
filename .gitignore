@@ -91,3 +91,10 @@ dmypy.json
 .env
 .env.local
 .env.*.local
+
+/face/daisee_local_model.pth
+/face/confusion_binary_model.pth
+/face/face-comprehension
+/face/model_cache
+/face/face-comprehension
+/face/model-cache

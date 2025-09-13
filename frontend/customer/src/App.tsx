@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import DocumentViewer from './components/DocumentViewer';
 import AIAssistant from './components/AIAssistant';
 
 interface ConfusedSection {
@@ -15,7 +14,6 @@ function App() {
   const [currentSection, setCurrentSection] = useState('');
   const [customerName] = useState('김민수');
   const [productType] = useState('정기예금');
-  const [readingProgress, setReadingProgress] = useState(0);
   const [showAIHelper, setShowAIHelper] = useState(false);
   const [confusedSections, setConfusedSections] = useState<ConfusedSection[]>([]);
   const [aiSuggestion, setAiSuggestion] = useState<{
@@ -50,12 +48,6 @@ function App() {
         setShowAIHelper(true);
       }, 5000);
       
-      // 읽기 진행률 업데이트
-      const progressInterval = setInterval(() => {
-        setReadingProgress(prev => Math.min(prev + 5, 100));
-      }, 1000);
-      
-      return () => clearInterval(progressInterval);
     }
   }, [isTracking]);
 
@@ -99,25 +91,6 @@ function App() {
         <div className="main-grid simplified">
           {/* 왼쪽 사이드바 */}
           <aside className="sidebar-left">
-            <div className="quick-menu">
-              <button className="menu-item active">
-                <span className="menu-icon">📄</span>
-                <span className="menu-label">상품약관</span>
-              </button>
-              <button className="menu-item">
-                <span className="menu-icon">💰</span>
-                <span className="menu-label">이자계산</span>
-              </button>
-              <button className="menu-item">
-                <span className="menu-icon">📊</span>
-                <span className="menu-label">비교분석</span>
-              </button>
-              <button className="menu-item">
-                <span className="menu-icon">❓</span>
-                <span className="menu-label">FAQ</span>
-              </button>
-            </div>
-
             {/* 진행 상태 카드 */}
             <div className="progress-card">
               <h3 className="card-title">상담 진행도</h3>
@@ -137,25 +110,6 @@ function App() {
               </div>
             </div>
 
-            {/* 읽기 진행률 */}
-            <div className="reading-progress-card">
-              <h3 className="card-title">읽기 진행률</h3>
-              <div className="progress-circle">
-                <svg width="120" height="120">
-                  <circle cx="60" cy="60" r="50" fill="none" stroke="#e0e0e0" strokeWidth="8" />
-                  <circle 
-                    cx="60" cy="60" r="50" 
-                    fill="none" 
-                    stroke="#00A651" 
-                    strokeWidth="8"
-                    strokeDasharray={`${readingProgress * 3.14} 314`}
-                    strokeLinecap="round"
-                    transform="rotate(-90 60 60)"
-                  />
-                </svg>
-                <div className="progress-value">{readingProgress}%</div>
-              </div>
-            </div>
           </aside>
 
           {/* 중앙 메인 콘텐츠 */}
@@ -163,33 +117,20 @@ function App() {
             {/* 상태 바 */}
             <div className="status-bar">
               <div className="status-item">
-                <span className="status-label">현재 읽는 부분</span>
-                <span className="status-value">{currentSection || '시작 전'}</span>
+                <span className="status-label">상담 상품</span>
+                <span className="status-value">{currentSection || '정기 예금'}</span>
               </div>
-              <div className="status-divider"></div>
-              <div className="tracking-status">
-                <span className="status-label">분석 상태</span>
-                <div className={`status-indicator ${isTracking ? 'active' : ''}`}>
-                  <span className="indicator-dot"></span>
-                  <span className="indicator-text">{isTracking ? '분석 중' : '대기'}</span>
-                </div>
-              </div>
-              {!isTracking && (
-                <button 
-                  className="tracking-toggle"
-                  onClick={() => setIsTracking(true)}
-                >
-                  읽기 시작
-                </button>
-              )}
             </div>
 
-            {/* 문서 뷰어 */}
+            {/* PDF 뷰어 */}
             <div className="document-container">
-              <DocumentViewer 
-                onSectionChange={setCurrentSection}
-                isTracking={isTracking}
-              />
+              <div className="pdf-viewer-container">
+                <iframe
+                  src="/NH내가Green초록세상예금.pdf"
+                  className="pdf-iframe"
+                  title="상품 약관 문서"
+                />
+              </div>
               
               {/* AI 도우미 오버레이 */}
               {showAIHelper && aiSuggestion && (
@@ -235,24 +176,6 @@ function App() {
               </div>
             )}
 
-            {/* 이해도 체크 카드 */}
-            <div className="understanding-card">
-              <h3 className="card-title">이해도 체크</h3>
-              <div className="understanding-levels">
-                <button className="level-btn level-good">
-                  <span className="level-icon">😊</span>
-                  <span>잘 이해했어요</span>
-                </button>
-                <button className="level-btn level-medium">
-                  <span className="level-icon">🤔</span>
-                  <span>조금 어려워요</span>
-                </button>
-                <button className="level-btn level-help">
-                  <span className="level-icon">🙋</span>
-                  <span>도움이 필요해요</span>
-                </button>
-              </div>
-            </div>
 
             {/* 용어 설명 카드 */}
             <div className="terms-card">
@@ -273,20 +196,6 @@ function App() {
               </div>
             </div>
 
-            {/* 도움 요청 카드 */}
-            <div className="help-card">
-              <h3 className="card-title">추가 도움</h3>
-              <div className="help-options">
-                <button className="help-option">
-                  <span className="option-icon">👨‍💼</span>
-                  <span>직원 호출</span>
-                </button>
-                <button className="help-option">
-                  <span className="option-icon">💬</span>
-                  <span>채팅 상담</span>
-                </button>
-              </div>
-            </div>
           </aside>
         </div>
       </main>

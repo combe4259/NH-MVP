@@ -1,0 +1,91 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 200
+>>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(NH 행복드림 정기예금 약관) Tj
+0 -20 Td
+(제1조 목적) Tj
+0 -15 Td
+(이 약관은 NH농협은행이 정기예금 상품을 제공함에 있어) Tj
+0 -15 Td
+(고객과의 권리와 의무를 명확히 하기 위하여 제정합니다.) Tj
+0 -30 Td
+(제2조 정의) Tj
+0 -15 Td
+(이 약관에서 사용하는 용어의 정의는 다음과 같습니다.) Tj
+0 -15 Td
+(1. 정기예금: 일정 기간 동안 예치하는 예금) Tj
+0 -15 Td
+(2. 만기: 예금 기간이 종료되는 날) Tj
+0 -15 Td
+(3. 중도해지: 만기 전 예금을 찾는 것) Tj
+0 -30 Td
+(제3조 중도해지 시 불이익) Tj
+0 -15 Td
+(만기 전 중도해지 시 약정한 우대이율은 적용되지 않으며,) Tj
+0 -15 Td
+(일반 예금 이율이 적용됩니다.) Tj
+0 -15 Td
+(중도해지 수수료: 예치금액의 0.1% (최소 1,000원)) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000274 00000 n 
+0000000525 00000 n 
+trailer
+<<
+/Size 6
+/Root 1 0 R
+>>
+startxref
+610
+%%EOF
