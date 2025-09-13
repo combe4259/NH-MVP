@@ -4,18 +4,19 @@ from typing import Dict, List, Optional, Tuple
 import asyncio
 from datetime import datetime, timezone
 
-# eyetrack 모듈 import (기존 코드 재사용)
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
+# eyetracking 모듈 import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 try:
-    from comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics, RealTimeComprehensionMonitor
-    from hybrid_analyzer import hybrid_analyzer
-except ImportError:
-    print("Warning: eyetrack 모듈을 찾을 수 없습니다. 시뮬레이션 모드로 동작합니다.")
+    from eyetrack.gaze_tracker import EyeGazeTracker, GazeData
+    from eyetrack.comprehension_analyzer import ComprehensionAnalyzer
+    EYETRACK_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: eyetrack 모듈을 찾을 수 없습니다: {e}")
+    EyeGazeTracker = None
+    GazeData = None
     ComprehensionAnalyzer = None
-    ComprehensionMetrics = None
-    RealTimeComprehensionMonitor = None
-    hybrid_analyzer = None
+    EYETRACK_AVAILABLE = False
 
 # AI 모델 매니저 import
 try:
@@ -268,25 +269,24 @@ class EyeTrackingService:
         """세션 전체 요약 정보 반환"""
         if consultation_id not in self.session_data:
             return None
-        
+
         session = self.session_data[consultation_id]
         sections = session['sections']
-        
+
         if not sections:
             return None
-        
-        # 전체 통계 계산
+
         avg_difficulty = sum(s['difficulty_score'] for s in sections) / len(sections)
         avg_confusion = sum(s['confusion_probability'] for s in sections) / len(sections)
-        
+
         comprehension_counts = {
             'high': len([s for s in sections if s['comprehension_level'] == 'high']),
             'medium': len([s for s in sections if s['comprehension_level'] == 'medium']),
             'low': len([s for s in sections if s['comprehension_level'] == 'low'])
         }
-        
+
         confused_sections = [s['section_name'] for s in sections if s['confusion_probability'] > 0.6]
-        
+
         return {
             'consultation_id': consultation_id,
             'total_sections': len(sections),
@@ -297,6 +297,108 @@ class EyeTrackingService:
             'session_duration': (datetime.now(timezone.utc) - session['start_time']).total_seconds() / 60,
             'last_updated': sections[-1]['timestamp'].isoformat() if sections else None
         }
+
+    def process_gaze_data(self, consultation_id: str, gaze_data: Dict) -> Dict:
+        """실시간 시선 데이터 처리"""
+        if consultation_id not in self.session_data:
+            self.session_data[consultation_id] = {
+                'gaze_points': [],
+                'current_section': '',
+                'confusion_level': 0.0,
+                'start_time': datetime.now(timezone.utc)
+            }
+
+        session = self.session_data[consultation_id]
+        session['gaze_points'].append({
+            'x': gaze_data['x'],
+            'y': gaze_data['y'],
+            'timestamp': gaze_data['timestamp'],
+            'confidence': gaze_data['confidence']
+        })
+
+        # 최근 시선 패턴 분석
+        if len(session['gaze_points']) > 10:
+            recent_points = session['gaze_points'][-10:]
+            analysis = self._analyze_gaze_pattern(recent_points)
+            session['confusion_level'] = analysis.get('confusion_level', 0.0)
+
+        return {
+            'processed': True,
+            'gaze_points_count': len(session['gaze_points']),
+            'current_confusion': session['confusion_level']
+        }
+
+    def get_current_confusion_status(self, consultation_id: str) -> Dict:
+        """현재 혼란도 상태 반환"""
+        if consultation_id not in self.session_data:
+            return {
+                'is_confused': False,
+                'confusion_probability': 0.0,
+                'current_section': '',
+                'ai_suggestion': None
+            }
+
+        session = self.session_data[consultation_id]
+        confusion_level = session.get('confusion_level', 0.0)
+        is_confused = confusion_level > 0.7
+
+        ai_suggestion = None
+        if is_confused:
+            ai_suggestion = {
+                'section': session.get('current_section', '현재 섹션'),
+                'explanation': '이 부분이 어려우시다면 직원에게 설명을 요청하세요.',
+                'simpleExample': '복잡한 용어가 포함되어 있을 수 있습니다.'
+            }
+
+        return {
+            'is_confused': is_confused,
+            'confusion_probability': confusion_level,
+            'current_section': session.get('current_section', ''),
+            'ai_suggestion': ai_suggestion
+        }
+
+    def get_reading_progress(self, consultation_id: str) -> Dict:
+        """읽기 진행률 반환"""
+        if consultation_id not in self.session_data:
+            return {
+                'percentage': 0,
+                'current_section': '',
+                'sections_completed': 0,
+                'total_sections': 0,
+                'time_remaining': 0
+            }
+
+        session = self.session_data[consultation_id]
+        sections_completed = len(session.get('sections', []))
+        total_sections = 10
+
+        percentage = min((sections_completed / total_sections) * 100, 100) if total_sections > 0 else 0
+        time_remaining = max((total_sections - sections_completed) * 2, 0)
+
+        return {
+            'percentage': round(percentage),
+            'current_section': session.get('current_section', ''),
+            'sections_completed': sections_completed,
+            'total_sections': total_sections,
+            'time_remaining': time_remaining
+        }
+
+    def _analyze_gaze_pattern(self, gaze_points: List[Dict]) -> Dict:
+        """시선 패턴 분석"""
+        if len(gaze_points) < 3:
+            return {'confusion_level': 0.0}
+
+        total_distance = 0
+        for i in range(1, len(gaze_points)):
+            prev = gaze_points[i-1]
+            curr = gaze_points[i]
+            distance = ((curr['x'] - prev['x'])**2 + (curr['y'] - prev['y'])**2)**0.5
+            total_distance += distance
+
+        avg_distance = total_distance / (len(gaze_points) - 1)
+        confusion_level = min(avg_distance / 100.0, 1.0)
+
+        return {'confusion_level': confusion_level}
 
 # 전역 서비스 인스턴스
 eyetrack_service = EyeTrackingService()

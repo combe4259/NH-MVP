@@ -247,13 +247,75 @@ async def simulate_analysis(
         logger.error(f"시뮬레이션 실패: {e}")
         raise HTTPException(status_code=500, detail="시뮬레이션 중 오류가 발생했습니다.")
 
+@router.post("/gaze-data")
+async def receive_gaze_data(consultation_id: str, gaze_x: float, gaze_y: float, timestamp: float, confidence: float):
+    """실시간 시선 데이터 수신"""
+    try:
+        gaze_data = {
+            "x": gaze_x,
+            "y": gaze_y,
+            "timestamp": timestamp,
+            "confidence": confidence
+        }
+
+        # 시선 데이터 처리 및 분석
+        analysis = eyetrack_service.process_gaze_data(consultation_id, gaze_data)
+
+        return APIResponse(
+            success=True,
+            message="시선 데이터 처리 완료",
+            data=analysis
+        )
+
+    except Exception as e:
+        logger.error(f"시선 데이터 처리 실패: {e}")
+        raise HTTPException(status_code=500, detail="시선 데이터 처리 중 오류가 발생했습니다.")
+
+@router.get("/confusion-status/{consultation_id}")
+async def get_confusion_status(consultation_id: str):
+    """현재 혼란도 상태 조회 (프론트엔드 AI 도우미용)"""
+    try:
+        status = eyetrack_service.get_current_confusion_status(consultation_id)
+
+        return {
+            "consultation_id": consultation_id,
+            "is_confused": status.get("is_confused", False),
+            "confusion_probability": status.get("confusion_probability", 0.0),
+            "current_section": status.get("current_section", ""),
+            "ai_suggestion": status.get("ai_suggestion"),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"혼란도 상태 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail="상태 조회 중 오류가 발생했습니다.")
+
+@router.get("/reading-progress/{consultation_id}")
+async def get_reading_progress(consultation_id: str):
+    """읽기 진행률 조회"""
+    try:
+        progress = eyetrack_service.get_reading_progress(consultation_id)
+
+        return {
+            "consultation_id": consultation_id,
+            "progress_percentage": progress.get("percentage", 0),
+            "current_section": progress.get("current_section", ""),
+            "sections_completed": progress.get("sections_completed", 0),
+            "total_sections": progress.get("total_sections", 0),
+            "estimated_time_remaining": progress.get("time_remaining", 0),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"읽기 진행률 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail="진행률 조회 중 오류가 발생했습니다.")
+
 @router.get("/health")
 async def eyetracking_health():
     """아이트래킹 서비스 상태 확인"""
     try:
-        # 간단한 분석 테스트
         test_result = eyetrack_service.get_text_difficulty("테스트 텍스트입니다.")
-        
+
         return {
             "status": "healthy",
             "service": "eyetracking-analysis",
@@ -263,7 +325,7 @@ async def eyetracking_health():
     except Exception as e:
         return {
             "status": "unhealthy",
-            "service": "eyetracking-analysis", 
+            "service": "eyetracking-analysis",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
