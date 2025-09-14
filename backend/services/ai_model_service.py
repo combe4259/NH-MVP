@@ -140,14 +140,18 @@ class HuggingFaceModels(AIModelInterface):
             return {"confused": False, "probability": 0.0}
         
         try:
-            result = self.confusion_tracker.process_frame(frame)
-            if result:
-                return {
-                    "confused": result['predicted_class'] == 'Confused',
-                    "probability": result['confusion_prob'],
-                    "timestamp": result['timestamp']
-                }
-            return {"confused": False, "probability": 0.0}
+            # process_frame은 프레임을 반환하므로, 내부 상태를 직접 확인
+            processed_frame = self.confusion_tracker.process_frame(frame)
+            
+            # 현재 상태 가져오기
+            confusion_state = self.confusion_tracker.current_confusion_state
+            confusion_prob = self.confusion_tracker.confusion_probability
+            
+            return {
+                "confused": confusion_state == "Confused",
+                "probability": float(confusion_prob),
+                "timestamp": datetime.now().isoformat()
+            }
             
         except Exception as e:
             logger.error(f"얼굴 혼란도 분석 실패: {e}")
@@ -253,6 +257,7 @@ class AIModelManager:
     def _initialize_model(self):
         """환경변수 기반으로 모델 초기화"""
         
+        #model_type = os.getenv("AI_MODEL_TYPE", "mock").lower()  # 임시로 mock 사용 huggingface
         model_type = os.getenv("AI_MODEL_TYPE", "huggingface").lower()
         
         if model_type == "huggingface":

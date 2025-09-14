@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import AIAssistant from './components/AIAssistant';
+import { useRealtimeAnalysis } from './services/RealtimeAnalysisService';
 
 interface ConfusedSection {
   id: string;
@@ -21,6 +22,14 @@ function App() {
     explanation: string;
     simpleExample?: string;
   } | null>(null);
+
+  // 실시간 분석 서비스 연결
+  const { 
+    connectionStatus, 
+    analysisData, 
+    sendEyetrackingData, 
+    sendCombinedAnalysis 
+  } = useRealtimeAnalysis('consultation-001');
 
   useEffect(() => {
     // 시선 추적 시뮬레이션

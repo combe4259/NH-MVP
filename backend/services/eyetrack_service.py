@@ -3,6 +3,7 @@ import os
 from typing import Dict, List, Optional, Tuple
 import asyncio
 from datetime import datetime, timezone
+import numpy as np
 
 # eyetracking 모듈 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -153,7 +154,8 @@ class EyeTrackingService:
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
                                     section_text: str, reading_time: float, 
-                                    gaze_data: Optional[Dict] = None) -> Dict:
+                                    gaze_data: Optional[Dict] = None,
+                                    face_frame: Optional[np.ndarray] = None) -> Dict:
         """읽기 세션 분석 (메인 API 함수) - AI 모델 우선 사용"""
         
         try:
@@ -163,11 +165,21 @@ class EyeTrackingService:
                 difficulty_score = ai_result.get('difficulty_score', 0.5)
                 ai_explanation = ai_result.get('ai_explanation', '')
                 confused_sentences = [s.get('sentence_id', 0) for s in ai_result.get('confused_sections', [])]
+                
+                # 얼굴 혼란도 분석 (face_frame이 있을 때만)
+                face_confusion = {"confused": False, "probability": 0.0}
+                if face_frame is not None and hasattr(ai_model_manager, 'hf_models'):
+                    if ai_model_manager.hf_models:
+                        try:
+                            face_confusion = await ai_model_manager.hf_models.analyze_confusion_from_face(face_frame)
+                        except Exception as e:
+                            print(f"얼굴 분석 오류: {e}")
             else:
                 # Fallback: 기존 로직 사용
                 difficulty_score = self.get_text_difficulty(section_text)
                 confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
                 ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
+                face_confusion = {"confused": False, "probability": 0.0}
             
             # 혼란도는 읽기 시간 고려해서 계산 (AI와 결합)
             confusion_probability = self.calculate_confusion_probability(
@@ -189,38 +201,6 @@ class EyeTrackingService:
             recommendations = self._generate_recommendations(
                 confusion_probability, difficulty_score, reading_time
             )
-            
-            # 7. 세션 데이터 업데이트
-            if consultation_id not in self.session_data:
-                self.session_data[consultation_id] = {
-                    'sections': [],
-                    'start_time': datetime.now(timezone.utc)
-                }
-            
-            # 세션 데이터 업데이트 (하이브리드 결과 포함)
-            section_data = {
-                'section_name': section_name,
-                'difficulty_score': difficulty_score,
-                'confusion_probability': confusion_probability,
-                'comprehension_level': comprehension_level,
-                'timestamp': datetime.now(timezone.utc)
-            }
-
-            # 텍스트 분석 결과도 세션에 저장
-            if analysis_data:
-                section_data.update({
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-                # 세션 레벨에서도 업데이트
-                self.session_data[consultation_id].update({
-                    'current_section': section_name,
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-            self.session_data[consultation_id]['sections'].append(section_data)
             
             # 7. 텍스트 분석 (문장 + 단어 동시 분석)
             analysis_data = {}
@@ -258,6 +238,38 @@ class EyeTrackingService:
                     "overall_difficulty": 0.0,
                     "comprehension_level": "medium"
                 }
+            
+            # 8. 세션 데이터 업데이트
+            if consultation_id not in self.session_data:
+                self.session_data[consultation_id] = {
+                    'sections': [],
+                    'start_time': datetime.now(timezone.utc)
+                }
+            
+            # 세션 데이터 업데이트 (하이브리드 결과 포함)
+            section_data = {
+                'section_name': section_name,
+                'difficulty_score': difficulty_score,
+                'confusion_probability': confusion_probability,
+                'comprehension_level': comprehension_level,
+                'timestamp': datetime.now(timezone.utc)
+            }
+
+            # 텍스트 분석 결과도 세션에 저장
+            if analysis_data:
+                section_data.update({
+                    'difficult_terms': analysis_data.get('difficult_terms', []),
+                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
+                })
+
+                # 세션 레벨에서도 업데이트
+                self.session_data[consultation_id].update({
+                    'current_section': section_name,
+                    'difficult_terms': analysis_data.get('difficult_terms', []),
+                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
+                })
+
+            self.session_data[consultation_id]['sections'].append(section_data)
             
             result = {
                 "status": status,
