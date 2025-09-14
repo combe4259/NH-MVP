@@ -5,6 +5,8 @@ AI 모델 통합 인터페이스
 """
 
 import os
+import sys
+import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Union
 from datetime import datetime
@@ -74,6 +76,109 @@ class PyTorchModel(AIModelInterface):
         # TODO: 실제 섹션 분석 구현
         return []
 
+class HuggingFaceModels(AIModelInterface):
+    """HuggingFace 모델 통합 래퍼 (난이도 분석 + 얼굴 혼란도)"""
+    
+    def __init__(self):
+        self.difficulty_model = None
+        self.difficulty_tokenizer = None
+        self.confusion_model = None
+        self.confusion_tracker = None
+        self._load_models()
+        
+    def _load_models(self):
+        """모델 초기화"""
+        try:
+            # 텍스트 난이도 분석 모델
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            self.difficulty_tokenizer = AutoTokenizer.from_pretrained("combe4259/difficulty_klue")
+            self.difficulty_model = AutoModelForSequenceClassification.from_pretrained("combe4259/difficulty_klue")
+            self.difficulty_model.eval()
+            logger.info("KLUE-BERT 난이도 분석 모델 로드 완료")
+            
+            # 얼굴 혼란도 감지 모델
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'face'))
+            from realtime_confusion_tracker_hf import RealtimeConfusionTrackerHF
+            self.confusion_tracker = RealtimeConfusionTrackerHF(
+                repo_id='combe4259/face-comprehension',
+                prediction_interval=1.0
+            )
+            logger.info("얼굴 혼란도 감지 모델 로드 완료")
+            
+        except Exception as e:
+            logger.error(f"HuggingFace 모델 로드 실패: {e}")
+    
+    async def analyze_difficulty(self, text: str) -> float:
+        """텍스트 난이도 분석 (0.0 ~ 1.0)"""
+        if not self.difficulty_model:
+            return 0.5
+        
+        try:
+            import torch
+            inputs = self.difficulty_tokenizer(
+                text,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+                padding=True
+            )
+            
+            with torch.no_grad():
+                outputs = self.difficulty_model(**inputs)
+                prediction = torch.argmax(outputs.logits, dim=-1).item()
+                difficulty = (prediction + 1) / 10.0  # 1-10을 0.1-1.0으로 정규화
+            
+            return difficulty
+            
+        except Exception as e:
+            logger.error(f"난이도 분석 실패: {e}")
+            return 0.5
+    
+    async def analyze_confusion_from_face(self, frame: np.ndarray) -> Dict:
+        """얼굴 영상에서 혼란도 분석"""
+        if not self.confusion_tracker:
+            return {"confused": False, "probability": 0.0}
+        
+        try:
+            result = self.confusion_tracker.process_frame(frame)
+            if result:
+                return {
+                    "confused": result['predicted_class'] == 'Confused',
+                    "probability": result['confusion_prob'],
+                    "timestamp": result['timestamp']
+                }
+            return {"confused": False, "probability": 0.0}
+            
+        except Exception as e:
+            logger.error(f"얼굴 혼란도 분석 실패: {e}")
+            return {"confused": False, "probability": 0.0}
+    
+    async def generate_explanation(self, text: str, difficulty_score: float) -> str:
+        """AI 설명 생성"""
+        if difficulty_score > 0.7:
+            return f"이 부분은 어려운 금융 용어가 포함되어 있습니다. 쉽게 설명해드릴게요."
+        elif difficulty_score > 0.4:
+            return f"중간 정도 난이도의 텍스트입니다. 천천히 읽어보세요."
+        else:
+            return f"이해하기 쉬운 내용입니다."
+    
+    async def identify_confused_sections(self, text: str) -> List[Dict]:
+        """혼란스러운 섹션 식별"""
+        sentences = text.split('.')
+        confused_sections = []
+        
+        for i, sentence in enumerate(sentences):
+            if sentence.strip():
+                difficulty = await self.analyze_difficulty(sentence)
+                if difficulty > 0.6:
+                    confused_sections.append({
+                        "sentence_index": i,
+                        "text": sentence.strip(),
+                        "difficulty": difficulty
+                    })
+        
+        return confused_sections
+
 class OpenAIModel(AIModelInterface):
     """OpenAI API 래퍼"""
     
@@ -142,14 +247,26 @@ class AIModelManager:
     
     def __init__(self):
         self.current_model: Optional[AIModelInterface] = None
+        self.hf_models: Optional[HuggingFaceModels] = None
         self._initialize_model()
     
     def _initialize_model(self):
         """환경변수 기반으로 모델 초기화"""
         
-        model_type = os.getenv("AI_MODEL_TYPE", "mock").lower()
+        model_type = os.getenv("AI_MODEL_TYPE", "huggingface").lower()
         
-        if model_type == "pytorch" and os.getenv("AI_MODEL_PATH"):
+        if model_type == "huggingface":
+            # HuggingFace 모델 사용 (기본값)
+            try:
+                self.hf_models = HuggingFaceModels()
+                self.current_model = self.hf_models
+                logger.info("HuggingFace 모델 (KLUE-BERT + Face-Comprehension) 초기화 성공")
+            except Exception as e:
+                logger.error(f"HuggingFace 모델 초기화 실패: {e}")
+                self.current_model = MockAIModel()
+                logger.info("Fallback to Mock 모델")
+                
+        elif model_type == "pytorch" and os.getenv("AI_MODEL_PATH"):
             self.current_model = PyTorchModel(os.getenv("AI_MODEL_PATH"))
             logger.info("PyTorch 모델 초기화됨")
             

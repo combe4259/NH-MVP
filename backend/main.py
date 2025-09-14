@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import eyetracking, staff, consultations
 
+
 app = FastAPI(
     title="NH 스마트 상담 분석 시스템", 
     description="아이트래킹과 AI를 활용한 금융 상담 이해도 분석",
