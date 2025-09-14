@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 async def create_consultation(consultation: ConsultationCreate):
     """
     새 상담 세션 생성
-    
-    고객 정보와 상품 정보를 받아서 새로운 상담 세션을 시작합니다.
     """
     try:
         conn = await get_db_connection()
@@ -101,8 +99,6 @@ async def get_consultation(consultation_id: str):
 async def get_consultation_report(consultation_id: str):
     """
     상담 완료 후 리포트 생성
-    
-    Report 프론트엔드에서 사용하는 상담 요약 및 분석 결과를 제공합니다.
     """
     try:
         conn = await get_db_connection()

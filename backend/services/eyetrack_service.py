@@ -9,7 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 try:
     from eyetrack.gaze_tracker import EyeGazeTracker, GazeData
-    from eyetrack.comprehension_analyzer import ComprehensionAnalyzer
+    from eyetrack.comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics
     from eyetrack.hybrid_analyzer import HybridTextAnalyzer, HybridAnalysisResult
     EYETRACK_AVAILABLE = True
     print("Eyetrack 모듈들이 성공적으로 로드되었습니다")

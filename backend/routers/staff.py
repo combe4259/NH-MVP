@@ -79,63 +79,77 @@ async def get_realtime_monitoring_data(consultation_id: str):
 
 @router.get("/dashboard/overview")
 async def get_dashboard_overview():
-    """직원 대시보드 개요 정보"""
+    """직원 대시보드 개요 정보 (Supabase 연동)"""
     try:
-        conn = await get_db_connection()
-        
-        # 활성 상담 목록
-        active_consultations = await conn.fetch("""
-            SELECT DISTINCT 
-                c.id as consultation_id,
-                cu.name as customer_name,
-                c.product_type,
-                c.start_time,
-                c.consultation_phase,
-                COALESCE(latest.comprehension_level, 'unknown') as latest_comprehension,
-                COALESCE(latest.confusion_probability, 0) as latest_confusion,
-                COALESCE(latest.section_name, '분석 대기중') as current_section
-            FROM consultations c
-            JOIN customers cu ON c.customer_id = cu.id
-            LEFT JOIN (
-                SELECT DISTINCT ON (consultation_id) 
-                    consultation_id, comprehension_level, confusion_probability, 
-                    section_name, analysis_timestamp
-                FROM reading_analysis
-                ORDER BY consultation_id, analysis_timestamp DESC
-            ) latest ON c.id = latest.consultation_id
-            WHERE c.status = 'active'
-            ORDER BY c.start_time DESC
-            LIMIT 20
-        """)
-        
-        await release_db_connection(conn)
-        
-        # 데이터 가공
+        from supabase import create_client
+        import os
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+        supabase = create_client(supabase_url, supabase_key)
+
+        # 활성 상담 목록과 최신 분석 데이터 조회
+        consultations_response = supabase.table('consultations')\
+            .select('id, customer_id, product_type, consultation_phase, start_time, customers(name)')\
+            .eq('status', 'active')\
+            .order('start_time', desc=True)\
+            .limit(20)\
+            .execute()
+
         consultation_list = []
-        for row in active_consultations:
+
+        for consultation in consultations_response.data:
+            consultation_id = consultation['id']
+
+            # 각 상담의 최신 분석 데이터 조회
+            latest_analysis = supabase.table('reading_analysis')\
+                .select('section_name, comprehension_level, confusion_probability')\
+                .eq('consultation_id', consultation_id)\
+                .order('analysis_timestamp', desc=True)\
+                .limit(1)\
+                .execute()
+
+            # 지속 시간 계산
+            start_time = datetime.fromisoformat(consultation['start_time'].replace('Z', '+00:00'))
+            duration_minutes = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+
+            # 분석 데이터가 있으면 사용, 없으면 기본값
+            if latest_analysis.data:
+                analysis = latest_analysis.data[0]
+                current_section = analysis['section_name']
+                comprehension_level = analysis['comprehension_level']
+                confusion_probability = float(analysis['confusion_probability']) if analysis['confusion_probability'] else 0.0
+            else:
+                current_section = '분석 대기중'
+                comprehension_level = 'unknown'
+                confusion_probability = 0.0
+
             consultation_list.append({
-                "consultation_id": row['consultation_id'],
-                "customer_name": row['customer_name'],
-                "product_type": row['product_type'],
-                "current_section": row['current_section'],
-                "comprehension_level": row['latest_comprehension'],
-                "confusion_probability": float(row['latest_confusion']),
-                "needs_attention": float(row['latest_confusion']) > 0.6,
-                "duration_minutes": (datetime.now(timezone.utc) - row['start_time']).total_seconds() / 60
+                "consultation_id": consultation_id,
+                "customer_name": consultation['customers']['name'],
+                "product_type": consultation['product_type'],
+                "current_section": current_section,
+                "comprehension_level": comprehension_level,
+                "confusion_probability": confusion_probability,
+                "needs_attention": confusion_probability > 0.6,
+                "duration_minutes": int(duration_minutes),
+                "consultation_phase": consultation['consultation_phase']
             })
-        
+
         return {
             "active_consultations": consultation_list,
             "overview": {
-                "active_consultations_count": len(active_consultations),
+                "active_consultations_count": len(consultation_list),
                 "high_risk_customers": len([c for c in consultation_list if c['confusion_probability'] > 0.7]),
             },
             "last_updated": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"대시보드 개요 조회 실패: {e}")
-        raise HTTPException(status_code=500, detail="대시보드 데이터 조회 실패")
+        raise HTTPException(status_code=500, detail=f"대시보드 데이터 조회 실패: {str(e)}")
 
 @router.get("/alerts")
 async def get_active_alerts():

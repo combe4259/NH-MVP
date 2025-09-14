@@ -2,6 +2,10 @@ import asyncpg
 import os
 from typing import Optional
 import logging
+from dotenv import load_dotenv
+
+# 환경변수 로드
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,7 @@ class DatabaseManager:
                 user=DATABASE_CONFIG["user"],
                 password=DATABASE_CONFIG["password"],
                 database=DATABASE_CONFIG["database"],
+                ssl="require",  # Supabase requires SSL
                 min_size=1,
                 max_size=10
             )
