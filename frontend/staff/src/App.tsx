@@ -311,7 +311,7 @@ function App() {
                         />
                         <circle
                           className="progress-ring-circle"
-                          stroke={selectedCustomer.comprehensionLevel < 50 ? '#f44336' : selectedCustomer.comprehensionLevel < 70 ? '#ff9800' : '#4caf50'}
+                          stroke={selectedCustomer.comprehensionLevel < 50 ? '#d32f2f' : selectedCustomer.comprehensionLevel < 70 ? '#f57c00' : '#2e7d32'}
                           strokeWidth="12"
                           fill="transparent"
                           r="90"

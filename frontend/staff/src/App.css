@@ -1,6 +1,12 @@
 :root {
-  --nh-blue: #0066CC;
-  --nh-green: #00A651;
+  --nh-primary: #00A651 !important;
+  --nh-primary-dark: #008A42;
+  --nh-primary-light: #4CAF50;
+  --nh-secondary: #2E7D32;
+  --nh-accent: #66BB6A;
+  --nh-success: #4CAF50;
+  --nh-warning: #FF9800;
+  --nh-danger: #F44336;
   --nh-dark: #1a1a1a;
   --nh-gray: #666666;
   --nh-light-gray: #f8f9fa;
@@ -27,7 +33,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
-  background: #f0f2f5;
+  background: #f1f8e9;
   color: var(--nh-dark);
   -webkit-font-smoothing: antialiased;
 }
@@ -67,7 +73,7 @@ body {
 }
 
 .logo-nh {
-  color: var(--nh-blue);
+  color: var(--nh-primary);
 }
 
 .logo-bank {
@@ -105,8 +111,8 @@ body {
 }
 
 .nav-item.active {
-  background: var(--nh-green);
-  color: white;
+  background: #00A651 !important;
+  color: white !important;
 }
 
 .header-user {
@@ -128,7 +134,7 @@ body {
   position: absolute;
   top: -8px;
   right: -8px;
-  background: #ff4444;
+  background: var(--nh-danger);
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -211,12 +217,12 @@ body {
 }
 
 .metric-change.up {
-  color: #00c851;
-  background: rgba(0, 200, 81, 0.1);
+  color: var(--nh-success);
+  background: rgba(0, 166, 81, 0.1);
 }
 
 .metric-change.down {
-  color: #ff4444;
+  color: var(--nh-danger);
   background: rgba(255, 68, 68, 0.1);
 }
 
@@ -371,7 +377,7 @@ body {
 .customer-avatar {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, var(--nh-blue), var(--nh-green));
+  background: linear-gradient(135deg, var(--nh-primary), var(--nh-primary-light));
   color: white;
   border-radius: 50%;
   display: flex;
@@ -498,7 +504,7 @@ body {
 .comprehension-indicator.level-0,
 .comprehension-indicator.level-1 {
   background: rgba(255, 68, 68, 0.1);
-  color: #ff4444;
+  color: var(--nh-danger);
 }
 
 .comprehension-indicator.level-2 {
@@ -1301,7 +1307,7 @@ body {
 }
 
 .spec-mini.highlight {
-  color: var(--nh-blue);
+  color: var(--nh-primary);
   font-weight: 600;
 }
 
@@ -1334,7 +1340,7 @@ body {
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: var(--nh-blue);
+  background: var(--nh-primary);
   color: white;
   display: flex;
   align-items: center;
@@ -1405,7 +1411,7 @@ body {
 }
 
 .spec-value.highlight {
-  color: var(--nh-blue);
+  color: var(--nh-primary);
   font-size: 14px;
 }
 
@@ -1430,7 +1436,7 @@ body {
 
 .status-phase {
   font-size: 14px;
-  color: var(--nh-blue);
+  color: var(--nh-primary);
   font-weight: 600;
 }
 
@@ -1445,7 +1451,7 @@ body {
 
 .progress-fill-full {
   height: 100%;
-  background: var(--nh-blue);
+  background: var(--nh-primary);
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -1490,7 +1496,7 @@ body {
   padding: 16px;
   background: var(--nh-light-gray);
   border-radius: var(--radius);
-  border-left: 4px solid var(--nh-blue);
+  border-left: 4px solid var(--nh-primary);
 }
 
 .stat-icon {
@@ -1576,20 +1582,20 @@ body {
 }
 
 .timeline-item.active .timeline-marker {
-  background: var(--nh-blue);
-  box-shadow: 0 0 0 2px var(--nh-blue);
+  background: var(--nh-primary);
+  box-shadow: 0 0 0 2px var(--nh-primary);
   animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 2px var(--nh-blue);
+    box-shadow: 0 0 0 2px var(--nh-primary);
   }
   50% {
     box-shadow: 0 0 0 6px rgba(0, 102, 204, 0.3);
   }
   100% {
-    box-shadow: 0 0 0 2px var(--nh-blue);
+    box-shadow: 0 0 0 2px var(--nh-primary);
   }
 }
 
@@ -1615,7 +1621,7 @@ body {
 }
 
 .timeline-item.active .timeline-title {
-  color: var(--nh-blue);
+  color: var(--nh-primary);
 }
 
 /* Customer Screen Panel */
@@ -1806,7 +1812,7 @@ body {
 
 .progress-fill {
   height: 100%;
-  background: var(--nh-blue);
+  background: var(--nh-primary);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
@@ -2020,13 +2026,13 @@ body {
 }
 
 .product-btn.primary {
-  background: var(--nh-blue);
-  color: white;
-  border-color: var(--nh-blue);
+  background: #00A651 !important;
+  color: white !important;
+  border-color: #00A651 !important;
 }
 
 .product-btn.primary:hover {
-  background: #0052a3;
+  background: #008A42 !important;
 }
 
 @media (max-width: 768px) {
