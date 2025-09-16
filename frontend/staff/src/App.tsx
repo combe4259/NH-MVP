@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import './App.css';
+
+const API_BASE_URL = 'http://localhost:8000/api';
 
 interface CustomerData {
   id: string;
@@ -128,18 +131,48 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(customers[0]);
   
 
-  useEffect(() => {
-    const interval = setInterval(() => {
+  // 백엔드에서 데이터 가져오기
+  const fetchCustomersData = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/staff/dashboard/overview`);
+      const consultations = response.data.active_consultations;
+
+      // 백엔드 데이터를 프론트엔드 형식에 맞게 변환
+      setCustomers(currentCustomers => currentCustomers.map(customer => {
+        const backendData = consultations.find((c: any) => c.customer_name === customer.name);
+        if (backendData) {
+          return {
+            ...customer,
+            comprehensionLevel: backendData.comprehension_level,
+            currentSection: backendData.current_section,
+            consultationPhase: backendData.consultation_phase || customer.consultationPhase,
+            emotionState: backendData.emotion_state || customer.emotionState,
+            attentionScore: backendData.attention_score || customer.attentionScore
+          };
+        }
+        return customer;
+      }));
+    } catch (error) {
+      console.error('백엔드 데이터 가져오기 실패:', error);
+      // 실패시 기존 랜덤 업데이트 로직 실행
       setCustomers(prev => prev.map(customer => ({
         ...customer,
         comprehensionLevel: Math.max(0, Math.min(100, customer.comprehensionLevel + (Math.random() - 0.5) * 10)),
-        emotionState: ['neutral', 'focused', 'confused', 'stressed'][Math.floor(Math.random() * 4)],
+        emotionState: ['neutral', 'focused', 'confused', 'stressed'][Math.floor(Math.random() * 4)] as any,
         attentionScore: Math.max(0, Math.min(100, customer.attentionScore + (Math.random() - 0.5) * 8))
       })));
-    }, 3000);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 초기 데이터 로드
+    fetchCustomersData();
+
+    // 3초마다 업데이트
+    const interval = setInterval(fetchCustomersData, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchCustomersData]);
 
   const getPhaseLabel = (phase: string) => {
     const labels: { [key: string]: string } = {

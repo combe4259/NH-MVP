@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import ReactDOM from 'react-dom';
 import './AIAssistant.css';
 
 interface AIAssistantProps {
@@ -6,12 +7,30 @@ interface AIAssistantProps {
     section: string;
     explanation: string;
     simpleExample?: string;
-  };
+  } | null;
   onDismiss: () => void;
-  onRequestMore: (topic: string) => void;
+  onRequestMore?: (topic: string) => void;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequestMore }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequestMore = () => {} }) => {
+  const [mounted, setMounted] = useState(false);
+  const portalRoot = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    portalRoot.current = document.getElementById('ai-portal');
+    setMounted(true);
+    
+    // Prevent body scroll when AI Assistant is open
+    document.body.style.overflow = 'hidden';
+    
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  if (!mounted || !portalRoot.current || !suggestion) {
+    return null;
+  }
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAnimation, setShowAnimation] = useState(false);
   const [userFeedback, setUserFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
@@ -35,7 +54,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
     "더 간단히 설명해주세요"
   ];
 
-  return (
+  return ReactDOM.createPortal(
     <div className={`ai-assistant ${showAnimation ? 'show' : ''}`}>
       {/* 미니 플로팅 버튼 형태 */}
       {!isExpanded && (
@@ -128,42 +147,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               </div>
             </div>
 
-            {/* 피드백 */}
-            <div className="feedback-section">
-              <span className="feedback-label">도움이 되셨나요?</span>
-              <div className="feedback-buttons">
-                <button 
-                  className={`feedback-btn ${userFeedback === 'helpful' ? 'selected' : ''}`}
-                  onClick={() => handleFeedback('helpful')}
-                >
-                  <span>👍</span> 네, 이해했어요
-                </button>
-                <button 
-                  className={`feedback-btn ${userFeedback === 'not-helpful' ? 'selected' : ''}`}
-                  onClick={() => handleFeedback('not-helpful')}
-                >
-                  <span>🤔</span> 더 설명이 필요해요
-                </button>
-              </div>
-            </div>
-
-            {userFeedback === 'helpful' && (
-              <div className="success-message">
-                <span className="success-icon">✅</span>
-                <p>좋습니다! 계속 읽어주세요.</p>
-              </div>
-            )}
-
-            {userFeedback === 'not-helpful' && (
-              <div className="additional-help">
-                <p>직원에게 직접 설명을 들으시겠어요?</p>
-                <button className="call-staff">직원 호출하기</button>
-              </div>
-            )}
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    portalRoot.current
   );
 };
 

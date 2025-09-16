@@ -9,21 +9,53 @@ import cv2
 import numpy as np
 import base64
 import os
+from models.database import startup_database, shutdown_database
+
+# 텍스트 분석 모듈 임포트 (오류 처리 포함)
+try:
+    from routers import text_analysis
+    TEXT_ANALYSIS_AVAILABLE = True
+    print("text_analysis router import success")
+except ImportError as e:
+    print(f"text_analysis router import failed: {e}")
+    TEXT_ANALYSIS_AVAILABLE = False
+
+# 얼굴 분석 모듈 임포트 (오류 처리 포함)
+try:
+    from routers import face_analysis
+    FACE_ANALYSIS_AVAILABLE = True
+    print("face_analysis router import success")
+except ImportError as e:
+    print(f"face_analysis router import failed: {e}")
+    FACE_ANALYSIS_AVAILABLE = False
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # 로그
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI(
-    title="NH 스마트 상담 분석 시스템", 
-    description="아이트래킹과 AI를 활용한 금융 상담 이해도 분석",
+    title="NH 스마트 상담 분석 시스템",
+    description="금융 상담 이해도 분석",
     version="1.0.0"
 )
+
+# 데이터베이스 초기화 이벤트
+@app.on_event("startup")
+async def startup():
+    try:
+        await startup_database()
+        print("데이터베이스 연결 성공")
+    except Exception as e:
+        print(f"데이터베이스 연결 실패: {e}")
+
+@app.on_event("shutdown")
+async def shutdown():
+    await shutdown_database()
 
 # CORS 설정 (프론트엔드 연결용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 개발용 - 실제 배포시 특정 도메인만 허용
+    allow_origins=["*"],  # 개발용
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +66,20 @@ app.include_router(eyetracking.router, prefix="/api/eyetracking", tags=["아이�
 app.include_router(staff.router, prefix="/api/staff", tags=["직원용"])
 app.include_router(consultations.router, prefix="/api/consultations", tags=["상담관리"])
 
+# 텍스트 분석 라우터는 조건부 등록
+if TEXT_ANALYSIS_AVAILABLE:
+    app.include_router(text_analysis.router, prefix="/api/text", tags=["텍스트분석"])
+    print("text_analysis router registered successfully")
+else:
+    print("text_analysis router registration failed - missing dependencies")
+
+# 얼굴 분석 라우터는 조건부 등록
+if FACE_ANALYSIS_AVAILABLE:
+    app.include_router(face_analysis.router, prefix="/api/face", tags=["얼굴분석"])
+    print("face_analysis router registered successfully")
+else:
+    print("face_analysis router registration failed - missing dependencies")
+
 @app.get("/")
 async def root():
     return {
@@ -43,7 +89,9 @@ async def root():
         "endpoints": {
             "아이트래킹 분석": "/api/eyetracking/analyze",
             "직원 모니터링": "/api/staff/realtime/{consultation_id}",
-            "상담 리포트": "/api/consultations/{consultation_id}/report"
+            "상담 리포트": "/api/consultations/{consultation_id}/report",
+            "얼굴 분석": "/api/face/analyze-frame",
+            "텍스트 분석": "/api/text/analyze-text"
         }
     }
 
@@ -211,4 +259,4 @@ async def websocket_endpoint(websocket: WebSocket, consultation_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

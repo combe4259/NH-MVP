@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
 import './App.css';
 import AIAssistant from './components/AIAssistant';
 import { useRealtimeAnalysis } from './services/RealtimeAnalysisService';
+import PDFViewer from './components/PDFViewer';
+import WebcamFaceDetection from './components/WebcamFaceDetection';
+import EyeTracker from './components/EyeTracker';
+
+const API_BASE_URL = 'http://localhost:8000/api';
 
 interface ConfusedSection {
   id: string;
@@ -10,9 +16,42 @@ interface ConfusedSection {
   timestamp: Date;
 }
 
+interface HighlightedText {
+  text: string;
+  explanation: string;
+}
+
+interface DifficultSentence {
+  sentence: string;
+  sentence_id: string;
+  difficulty_score: number;
+  simplified_explanation: string;
+  original_position: number;
+  location?: {
+    page_number: number;
+    page_width: number;
+    page_height: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+interface FaceDetectionData {
+  hasDetection: boolean;
+  confidence: number;
+  emotions?: {
+    engagement: number;
+    confusion: number;
+    frustration: number;
+    boredom: number;
+  };
+}
+
 function App() {
-  const [isTracking, setIsTracking] = useState(false);
-  const [currentSection, setCurrentSection] = useState('');
+  const [isTracking, setIsTracking] = useState(true);
+  const [currentSection, setCurrentSection] = useState('중도해지 시 불이익');
   const [customerName] = useState('김민수');
   const [productType] = useState('정기예금');
   const [showAIHelper, setShowAIHelper] = useState(false);
@@ -22,56 +61,379 @@ function App() {
     explanation: string;
     simpleExample?: string;
   } | null>(null);
+  const [highlightedTexts, setHighlightedTexts] = useState<HighlightedText[]>([]);
+  // ★★★ 단순한 useState로 변경 ★★★
+  const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([]);
+  const [mainTerms, setMainTerms] = useState<{term: string, definition: string}[]>([]);
+  const [gazeDataBuffer, setGazeDataBuffer] = useState<any[]>([]);
+  const pdfViewerRef = useRef<HTMLDivElement>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
-  // 실시간 분석 서비스 연결
-  const { 
-    connectionStatus, 
-    analysisData, 
-    sendEyetrackingData, 
-    sendCombinedAnalysis 
-  } = useRealtimeAnalysis('consultation-001');
 
-  useEffect(() => {
-    // 시선 추적 시뮬레이션
-    if (isTracking) {
-      console.log('시선 추적 시작...');
-      
-      // 시뮬레이션: 5초 후 어려운 부분 감지
-      setTimeout(() => {
-        const mockConfusedSection = {
-          id: 'section3',
-          title: '중도해지 시 불이익',
-          content: '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다',
+  const analyzeTextContent = useCallback(async (sectionName: string, sectionText: string) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/text/analyze-text`, {
+        section_text: sectionText,
+        consultation_id: '29853704-6f54-4df2-bb40-6efa9a63cf53',
+        current_section: sectionName
+      });
+
+      const analysisData = response.data;
+
+      // 전체 문장으로 검색하도록 수정
+      const mockDifficultSentences: DifficultSentence[] = [
+        {
+          sentence: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
+          sentence_id: 'sentence_001',
+          difficulty_score: 0.8,
+          simplified_explanation: '법원에서 계좌를 막거나, 다른 사람이 그 돈에 대한 권리를 주장하면, 예금을 찾을 수 없게 됩니다.',
+          original_position: 1
+        }
+      ];
+
+      setDifficultSentences(mockDifficultSentences);
+
+      // 우측 사이드바 주요 용어 설정
+      setMainTerms([
+        { term: '압류', definition: '법원의 재산 동결 조치' },
+        { term: '가압류', definition: '임시 재산 동결' },
+        { term: '질권설정', definition: '담보 목적 예금 잠금' }
+      ]);
+
+      // 전체 이해도가 낮으면 AI 도우미 표시 (원본 코드)
+      // if (analysisData.overall_difficulty > 0.6) {
+      //   setAiSuggestion({
+      //     section: sectionName,
+      //     explanation: `이 섹션의 이해도가 낮게 측정되었습니다. 전체적인 난이도: ${(analysisData.overall_difficulty * 100).toFixed(0)}%`,
+      //     simpleExample: analysisData.difficult_sentences.length > 0 ?
+      //       `특히 "${analysisData.difficult_sentences[0].sentence.substring(0, 30)}..." 부분이 어려울 수 있습니다.` :
+      //       '어려운 부분이 있으면 밑줄 친 문장을 클릭해 보세요.'
+      //   });
+      //   setShowAIHelper(true);
+      // }
+
+      // setSpecificMockData(); // 좌표 데이터를 덮어쓰지 않도록 주석 처리
+
+      console.log('텍스트 분석 완료:', analysisData);
+
+    } catch (error) {
+      console.error('텍스트 분석 실패:', error);
+      // 폴백으로 특정 문장 목업데이터 사용 - 좌표 덮어쓰기 방지를 위해 주석 처리
+      // setSpecificMockData();
+    }
+  }, []);
+
+  const sendAnalysisData = useCallback(async (sectionName: string, sectionText: string, readingTime: number) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/eyetracking/analyze`, {
+        consultation_id: '29853704-6f54-4df2-bb40-6efa9a63cf53',
+        customer_id: '12345678-1234-5678-9012-123456789012',
+        current_section: sectionName,
+        section_text: sectionText,
+        reading_time: readingTime,
+        gaze_data: gazeDataBuffer.length > 0 ? {
+          raw_points: gazeDataBuffer.slice(-20).map(point => ({
+            x: point.screen_x || point.x || 0,
+            y: point.screen_y || point.y || 0,
+            timestamp: point.timestamp || Date.now(),
+            confidence: point.confidence || 0.8
+          })),
+          total_duration: gazeDataBuffer.reduce((sum, point) => sum + (point.duration || 200), 0),
+          fixation_count: gazeDataBuffer.length,
+          saccade_count: Math.max(1, Math.floor(gazeDataBuffer.length / 3)),
+          regression_count: Math.floor(gazeDataBuffer.length * 0.1)
+        } : {
+          // fallback 랜덤 데이터 (아이트래킹 실패 시)
+          raw_points: [{x: 0.5, y: 0.5, timestamp: Date.now(), confidence: 0.5}],
+          total_duration: Math.floor(Math.random() * 3000) + 1000,
+          fixation_count: Math.floor(Math.random() * 20) + 5,
+          saccade_count: Math.floor(Math.random() * 15) + 5,
+          regression_count: Math.floor(Math.random() * 5)
+        }
+      });
+
+      const analysis = response.data;
+
+      if (analysis.confusion_probability > 0.6) {
+        const confusedSection = {
+          id: 'section_' + Date.now(),
+          title: sectionName,
+          content: sectionText,
           timestamp: new Date()
         };
-        
-        setConfusedSections([mockConfusedSection]);
-        
-        // AI 도우미 자동 활성화
-        setAiSuggestion({
-          section: '중도해지 시 불이익',
-          explanation: '중도해지란 정기예금 만기일 전에 예금을 찾는 것을 말합니다. 이 경우 약속했던 높은 이자율 대신 낮은 이자율이 적용됩니다.',
-          simpleExample: '예를 들어, 1년 만기 연 4% 예금을 6개월 만에 해지하면 연 0.5% 정도의 낮은 이자만 받게 됩니다.'
-        });
-        
-        setShowAIHelper(true);
-      }, 5000);
-      
-    }
-  }, [isTracking]);
 
-  const handleAIHelperDismiss = () => {
+        setConfusedSections([confusedSection]);
+        setAiSuggestion({
+          section: sectionName,
+          explanation: analysis.ai_explanation || '이 부분이 복잡할 수 있습니다. 더 자세한 설명이 필요하시면 상담원에게 문의해주세요.',
+          simpleExample: analysis.simple_explanation
+        });
+
+        if (analysis.difficult_terms && analysis.detailed_explanations) {
+          const newHighlights: HighlightedText[] = analysis.difficult_terms.map((term: string) => ({
+            text: term,
+            explanation: analysis.detailed_explanations[term] || '이 용어에 대한 설명이 필요합니다.'
+          }));
+
+          // 하이라이트가 실제로 변경된 경우에만 업데이트
+          setHighlightedTexts(prev => {
+            const prevTexts = prev.map(h => h.text).join(',');
+            const newTexts = newHighlights.map(h => h.text).join(',');
+            return prevTexts !== newTexts ? newHighlights : prev;
+          });
+        }
+        setShowAIHelper(true);
+      }
+    } catch (error) {
+      console.error('분석 데이터 전송 실패:', error);
+      // 폴백으로 특정 문장 목업데이터 사용 - 좌표 덮어쓰기 방지를 위해 주석 처리
+      // setSpecificMockData();
+    }
+  }, []);
+
+  useEffect(() => {
+    console.log('컴포넌트 마운트됨 - 시선 추적 시작');
+    setIsTracking(true);
+    return () => {
+      console.log('컴포넌트 언마운트됨 - 시선 추적 중지');
+      setIsTracking(false);
+    };
+  }, []);
+
+  // AI 상태 폴링 함수 추가
+  const checkAIStatus = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/eyetracking/ai-status/29853704-6f54-4df2-bb40-6efa9a63cf53`);
+      const aiStatus = response.data;
+
+      // AI 서버가 "도우미를 띄워라"고 결정한 경우에만 팝업
+      if (aiStatus.should_trigger_ai_assistant && !showAIHelper) {
+        setAiSuggestion({
+          section: aiStatus.current_section || '분석 결과',
+          explanation: aiStatus.ai_explanation || '추가 도움이 필요할 것 같습니다.',
+          simpleExample: aiStatus.recommendation || '천천히 읽어보시거나 직원에게 문의하세요.'
+        });
+        setShowAIHelper(true);
+
+        if (aiStatus.confused_sections && aiStatus.confused_sections.length > 0) {
+          setConfusedSections(aiStatus.confused_sections);
+        }
+      }
+    } catch (error) {
+      console.error('AI 상태 확인 실패:', error);
+    }
+  }, [showAIHelper]);
+
+  // 주기적 AI 분석 및 상태 확인
+  useEffect(() => {
+    if (!isTracking) return;
+
+    // 단순화: 컴포넌트 마운트 시 한 번만 분석 실행
+    const timer = setTimeout(() => {
+      // 기존 아이트래킹 분석
+      sendAnalysisData(currentSection, '상품의 주요 내용에 대한 설명입니다.', 5000);
+      // 텍스트 분석
+      analyzeTextContent(currentSection, '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다. 예금자보호법에 따른 보호 한도는 5천만원입니다.');
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [isTracking, currentSection, sendAnalysisData, analyzeTextContent]);
+
+  // AI 상태 주기적 확인 (3초마다)
+  useEffect(() => {
+    if (!isTracking) return;
+
+    const statusInterval = setInterval(checkAIStatus, 3000);
+    return () => clearInterval(statusInterval);
+  }, [isTracking, checkAIStatus]);
+
+  // AI 도우미 닫기 핸들러
+  const handleAIHelperDismiss = useCallback(() => {
     setShowAIHelper(false);
     setAiSuggestion(null);
-  };
+  }, []);
 
   const handleRequestMoreInfo = (topic: string) => {
-    // 추가 설명 요청 처리
     console.log('추가 설명 요청:', topic);
   };
 
+  const setSpecificMockData = () => {
+    // 사용자가 요청한 특정 문장에 대한 목업데이터
+    const mockDifficultSentences: DifficultSentence[] = [
+      {
+        sentence: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
+        sentence_id: 'sentence_001',
+        difficulty_score: 0.8,
+        simplified_explanation: '법원에서 계좌를 막거나, 다른 사람이 그 돈에 대한 권리를 주장하면, 예금을 찾을 수 없게 됩니다.',
+        original_position: 1,
+        location: {
+          page_number: 1,
+          page_width: 595,
+          page_height: 842,
+          x: 100,
+          y: 700,
+          width: 400,
+          height: 25
+        }
+      }
+    ];
+
+    setDifficultSentences(mockDifficultSentences);
+
+    const mockHighlights = [
+      { text: '압류', explanation: '법원이 돈이나 재산을 못 쓰게 막는 것' },
+      { text: '가압류', explanation: '임시로 재산을 못 쓰게 막는 것' },
+      { text: '질권설정', explanation: '빚 담보로 예금을 잡히는 것' }
+    ];
+
+    setHighlightedTexts(mockHighlights);
+    setMainTerms([
+      { term: '압류', definition: '법원의 재산 동결 조치' },
+      { term: '가압류', definition: '임시 재산 동결' },
+      { term: '질권설정', definition: '담보 목적 예금 잠금' }
+    ]);
+
+    // AI 도우미도 설정
+    setAiSuggestion({
+      section: '압류 관련 제한 사항',
+      explanation: '계좌에 법적 조치가 취해지면 예금을 찾을 수 없게 됩니다.',
+      simpleExample: '법원에서 계좌를 막거나, 빚 담보로 예금이 잡히면 돈을 찾을 수 없습니다.'
+    });
+    setShowAIHelper(true);
+  };
+
+  const setFallbackData = (sectionName: string) => {
+    // 기존 하드코딩 데이터 사용
+    const mockConfusedSection = {
+      id: 'section3',
+      title: '중도해지 시 불이익',
+      content: '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다',
+      timestamp: new Date()
+    };
+
+    setConfusedSections([mockConfusedSection]);
+
+    const mockHighlights = [
+      { text: '중도해지', explanation: '정기예금 만기일 전에 예금을 찾는 것을 의미합니다.' },
+      { text: '우대이율', explanation: '은행에서 특정 조건을 충족할 때 제공하는 추가 이자율입니다.' }
+    ];
+
+    setHighlightedTexts(mockHighlights);
+    setMainTerms([
+      { term: '중도해지', definition: '만기 전 예금 인출' },
+      { term: '우대이율', definition: '조건 충족시 추가 이자' }
+    ]);
+  };
+
+  // 문장 클릭 핸들러
+  const handleSentenceClick = useCallback((sentence: DifficultSentence) => {
+    console.log('선택된 문장:', sentence.sentence);
+    setAiSuggestion({
+      section: sentence.sentence.substring(0, 20) + '...',
+      explanation: sentence.simplified_explanation,
+      simpleExample: '구체적인 예시나 추가 설명이 필요하시면 직원에게 문의해 주세요.'
+    });
+    setShowAIHelper(true);
+  }, []);
+
+  // Raw 얼굴 감정 데이터만 전송 (판단은 AI 서버에서)
+  const sendRawEmotionData = useCallback(async (emotions: any) => {
+    try {
+      await axios.post(`${API_BASE_URL}/eyetracking/submit-emotion-data`, {
+        consultation_id: '29853704-6f54-4df2-bb40-6efa9a63cf53',
+        customer_id: '12345678-1234-5678-9012-123456789012',
+        raw_emotion_scores: {
+          confusion: emotions.confusion,
+          engagement: emotions.engagement,
+          frustration: emotions.frustration,
+          boredom: emotions.boredom
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('얼굴 감정 데이터 전송 실패:', error);
+    }
+  }, []);
+
+  const handleFaceAnalysis = (data: FaceDetectionData) => {
+    // Raw 데이터만 전송, 분석과 판단은 AI 서버에서
+    if (data.hasDetection && data.emotions) {
+      // Raw 감정 점수만 전송
+      sendRawEmotionData(data.emotions);
+    }
+  };
+
+  // 실제 시선 추적 데이터 처리
+  const handleGazeData = useCallback((gazeData: any) => {
+    // PDF 좌표 변환
+    let pdfCoordinate: { x: number; y: number; page: number } | null = null;
+    if (pdfViewerRef.current) {
+      const pdfContainer = pdfViewerRef.current;
+      const containerRect = pdfContainer.getBoundingClientRect();
+
+      // PDF 뷰어 내부인지 확인
+      if (gazeData.x >= containerRect.left && gazeData.x <= containerRect.right &&
+          gazeData.y >= containerRect.top && gazeData.y <= containerRect.bottom) {
+
+        // PDF 페이지 요소 찾기
+        const pdfPage = pdfContainer.querySelector('.rpv-core__page-layer');
+        if (pdfPage) {
+          const pageRect = pdfPage.getBoundingClientRect();
+
+          // PDF 페이지 내 상대 좌표 계산
+          const relativeX = gazeData.x - pageRect.left;
+          const relativeY = gazeData.y - pageRect.top;
+
+          // PDF 페이지 크기 대비 비율로 변환 (0-100%)
+          const percentX = (relativeX / pageRect.width) * 100;
+          const percentY = (relativeY / pageRect.height) * 100;
+
+          if (percentX >= 0 && percentX <= 100 && percentY >= 0 && percentY <= 100) {
+            pdfCoordinate = {
+              x: percentX,
+              y: percentY,
+              page: 1 // 현재는 단일 페이지 가정
+            };
+          }
+        }
+      }
+    }
+
+    // 시선 데이터를 버퍼에 추가 (PDF 좌표 포함)
+    setGazeDataBuffer(prev => [...prev, {
+      screen_x: gazeData.x,
+      screen_y: gazeData.y,
+      pdf_coordinate: pdfCoordinate,
+      timestamp: gazeData.timestamp,
+      confidence: gazeData.confidence,
+      duration: 200
+    }].slice(-100)); // 최대 100개 포인트만 유지
+
+    if (pdfCoordinate) {
+      console.log('PDF 내 시선 추적:', {
+        screen: { x: gazeData.x, y: gazeData.y },
+        pdf: pdfCoordinate
+      });
+    }
+  }, []);
+
   return (
     <div className="app-container">
+      {/* 숨겨진 웹캠 (백그라운드 얼굴 분석용) */}
+      <div style={{ display: 'none' }}>
+        <WebcamFaceDetection
+          isActive={isTracking}
+          onFaceAnalysis={handleFaceAnalysis}
+        />
+      </div>
+
+      {/* 시선 추적 컴포넌트 */}
+      <EyeTracker
+        isTracking={isTracking}
+        onGazeData={handleGazeData}
+      />
+
+
       {/* 상단 헤더 */}
       <header className="app-header">
         <div className="header-left">
@@ -85,6 +447,16 @@ function App() {
           </div>
         </div>
         <div className="header-right">
+          <div className="tracking-status">
+            <span className="status-indicator camera">
+              <span className="status-dot"></span>
+              카메라 {isTracking ? '활성' : '비활성'}
+            </span>
+            <span className="status-indicator eye-track">
+              <span className="status-dot"></span>
+              시선추적 {isTracking ? '실행중' : '정지'}
+            </span>
+          </div>
           <div className="ai-status">
             <span className={`ai-indicator ${showAIHelper ? 'active' : ''}`}>
               <span className="ai-dot"></span>
@@ -100,7 +472,6 @@ function App() {
         <div className="main-grid simplified">
           {/* 왼쪽 사이드바 */}
           <aside className="sidebar-left">
-            {/* 진행 상태 카드 */}
             <div className="progress-card">
               <h3 className="card-title">상담 진행도</h3>
               <div className="progress-steps">
@@ -118,45 +489,25 @@ function App() {
                 </div>
               </div>
             </div>
-
           </aside>
 
           {/* 중앙 메인 콘텐츠 */}
-          <div className="main-content">
-            {/* 상태 바 */}
+          <div className="main-content" ref={pdfViewerRef}>
             <div className="status-bar">
               <div className="status-item">
                 <span className="status-label">상담 상품</span>
-                <span className="status-value">{currentSection || '정기 예금'}</span>
               </div>
             </div>
-
-            {/* PDF 뷰어 */}
-            <div className="document-container">
-              <div className="pdf-viewer-container">
-                <iframe
-                  src="/NH내가Green초록세상예금.pdf"
-                  className="pdf-iframe"
-                  title="상품 약관 문서"
-                />
-              </div>
-              
-              {/* AI 도우미 오버레이 */}
-              {showAIHelper && aiSuggestion && (
-                <div className="ai-helper-overlay">
-                  <AIAssistant
-                    suggestion={aiSuggestion}
-                    onDismiss={handleAIHelperDismiss}
-                    onRequestMore={handleRequestMoreInfo}
-                  />
-                </div>
-              )}
-            </div>
+            <PDFViewer
+              fileUrl="/NH내가Green초록세상예금.pdf"
+              highlightedTexts={highlightedTexts}
+              difficultSentences={difficultSentences}
+              onSentenceClick={handleSentenceClick}
+            />
           </div>
 
           {/* 오른쪽 사이드바 */}
           <aside className="sidebar-right">
-            {/* AI 인사이트 카드 */}
             {confusedSections.length > 0 && (
               <div className="ai-insights-card">
                 <div className="card-header-with-icon">
@@ -167,46 +518,40 @@ function App() {
                   <p className="insight-intro">
                     어려워하시는 부분을 감지했습니다
                   </p>
-                  <div className="confused-sections">
-                    {confusedSections.map(section => (
-                      <div key={section.id} className="confused-item">
-                        <strong>{section.title}</strong>
-                        <p>{section.content}</p>
-                        <button 
-                          className="explain-btn"
-                          onClick={() => setShowAIHelper(true)}
-                        >
-                          쉽게 설명 듣기
-                        </button>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             )}
-
-
-            {/* 용어 설명 카드 */}
             <div className="terms-card">
               <h3 className="card-title">주요 용어</h3>
               <div className="terms-list">
-                <div className="term-item">
-                  <strong>중도해지</strong>
-                  <p>만기 전 예금을 찾는 것</p>
-                </div>
-                <div className="term-item">
-                  <strong>우대금리</strong>
-                  <p>조건 충족 시 추가 이자</p>
-                </div>
-                <div className="term-item">
-                  <strong>예금자보호</strong>
-                  <p>5천만원까지 보장</p>
-                </div>
+                {mainTerms.length > 0 ? (
+                  mainTerms.map((term, index) => (
+                    <div key={index} className="term-item">
+                      <strong>{term.term}</strong>
+                      <p>{term.definition}</p>
+                    </div>
+                  ))
+                ) : (
+                  // 분석 결과 없을 때 기본값
+                  <>
+                    <div className="term-item">
+                      <strong>중도해지</strong>
+                      <p>만기 전 예금을 찾는 것</p>
+                    </div>
+                    <div className="term-item">
+                      <strong>우대금리</strong>
+                      <p>조건 충족 시 추가 이자</p>
+                    </div>
+                    <div className="term-item">
+                      <strong>예금자보호</strong>
+                      <p>5천만원까지 보장</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
-
           </aside>
-        </div>
+        </div> {/* main-grid 닫기 */}
       </main>
 
       {/* 하단 액션 바 */}

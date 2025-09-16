@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { reportAPI, ConsultationReport } from './api/backend';
 
 interface OverviewProps {
   consultationId: string;
@@ -7,9 +8,6 @@ interface OverviewProps {
 }
 
 interface ConsultationDetails {
-  title: string;
-  location: string;
-  date: string;
   productInfo: {
     name: string;
     investment: string;
@@ -28,105 +26,89 @@ interface ConsultationDetails {
 }
 
 const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
-  const getConsultationDetails = (id: string): ConsultationDetails | null => {
-    const detailsMap: Record<string, ConsultationDetails> = {
-      '1': {
-        title: '은퇴설계 연금펀드 상담',
-        location: '미사강변지점',
-        date: '2025.09.08',
-        productInfo: {
-          name: 'NH 퇴직연금펀드',
-          investment: '월 50만원 적립',
-          totalAmount: '6,000만원 (10년)'
-        },
-        importantItems: [
-          {
-            text: '중도해지 시 불이익',
-            desc: '5년 이내 해지 시 수익률 3% 감소'
-          },
-          {
-            text: '세제 혜택',
-            desc: '연간 700만원까지 세액공제 가능'
-          }
-        ],
-        expectedReturn: {
-          period: '10년 만기 예상',
-          amount: '8,570만원',
-          profit: '수익률 42.8% (+2,570만원)'
-        },
-        todoItems: [
-          '가족 관계 증명서 준비',
-          '소득 증빙 서류 제출',
-          '계좌 개설 신청서 작성'
-        ]
-      },
-      '2': {
-        title: '주택청약 적금 상담',
-        location: '미사강변지점',
-        date: '2025.09.08',
-        productInfo: {
-          name: 'NH 주택청약종합저축',
-          investment: '월 30만원 적립',
-          totalAmount: '1,080만원 (3년)'
-        },
-        importantItems: [
-          {
-            text: '청약 1순위 조건',
-            desc: '2년 이상 납입, 지역별 예치금 충족 필요'
-          },
-          {
-            text: '해지 제한',
-            desc: '청약 사용 전 임의 해지 시 재가입 제한'
-          }
-        ],
-        expectedReturn: {
-          period: '3년 만기 예상',
-          amount: '1,150만원',
-          profit: '수익률 6.5% (+70만원)'
-        },
-        todoItems: [
-          '주민등록등본 제출',
-          '청약통장 개설 신청',
-          '자동이체 계좌 연결'
-        ]
-      },
-      '3': {
-        title: '정기예금 상담',
-        location: '미사강변지점',
-        date: '2025.09.08',
-        productInfo: {
-          name: 'NH 정기예금',
-          investment: '1,000만원 일시납',
-          totalAmount: '1,000만원 (1년)'
-        },
-        importantItems: [
-          {
-            text: '금리 우대 조건',
-            desc: 'NH카드 사용실적 월 30만원 이상 시 0.2%p 추가'
-          },
-          {
-            text: '만기 후 처리',
-            desc: '만기일 후 자동연장 또는 보통예금 전환'
-          }
-        ],
-        expectedReturn: {
-          period: '1년 만기',
-          amount: '1,038만원',
-          profit: '수익률 3.8% (+38만원)'
-        },
-        todoItems: [
-          '신분증 지참 방문',
-          '예금 가입 신청서 작성',
-          '인감 또는 서명 등록'
-        ]
+  const [consultationReport, setConsultationReport] = useState<ConsultationReport | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchConsultationReport = async () => {
+      try {
+        setIsLoading(true);
+        const report = await reportAPI.getConsultationReport(consultationId);
+        setConsultationReport(report);
+      } catch (error) {
+        console.error('상담 리포트 조회 실패:', error);
+        setError('상담 정보를 불러올 수 없습니다.');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    return detailsMap[id] || null;
+    fetchConsultationReport();
+  }, [consultationId]);
+
+  // 백엔드 데이터에서 UI용 상세 정보 추출
+  const getConsultationDetails = (): ConsultationDetails | null => {
+    if (!consultationReport?.detailed_info) {
+      return null;
+    }
+
+    const dbData = consultationReport.detailed_info;
+    return {
+      productInfo: {
+        name: dbData.product_name || '',
+        investment: dbData.investment_type || '',
+        totalAmount: dbData.total_amount || ''
+      },
+      importantItems: dbData.important_items || [],
+      expectedReturn: dbData.expected_return || { period: '', amount: '', profit: '' },
+      todoItems: dbData.todo_items || []
+    };
   };
 
-  const details = getConsultationDetails(consultationId);
-  if (!details) return null;
+  if (isLoading) {
+    return (
+      <div className="max-w-sm mx-auto bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">상담 내역을 불러오는 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !consultationReport) {
+    return (
+      <div className="max-w-sm mx-auto bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">{error || '상담 내역을 찾을 수 없습니다.'}</p>
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          >
+            돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const details = getConsultationDetails();
+  if (!details) {
+    return (
+      <div className="max-w-sm mx-auto bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">상담 상세 정보를 찾을 수 없습니다.</p>
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          >
+            돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-sm mx-auto bg-gray-50 min-h-screen">
@@ -143,8 +125,8 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
       <div className="px-4 py-6 overflow-y-auto scrollbar-hide" style={{ height: 'calc(100vh - 90px)' }}>
         {/* Title Section */}
         <div className="text-center mb-8">
-          <h2 className="text-xl font-bold text-black mb-2">{details.title}</h2>
-          <p className="text-sm text-gray-500">{details.location} • {details.date}</p>
+          <h2 className="text-xl font-bold text-black mb-2">{consultationReport.product_type} 상담</h2>
+          <p className="text-sm text-gray-500">NH 디지털 상담 • {new Date(consultationReport.start_time).toLocaleDateString('ko-KR')}</p>
         </div>
 
         {/* Product Info */}
