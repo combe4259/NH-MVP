@@ -1,8 +1,25 @@
 import sys
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Any
 import asyncio
 from datetime import datetime, timezone
+import logging
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Add parent directory to path to import text_simplifier
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+try:
+    from text_simplifier_krfinbert_kogpt2 import FinancialTextSimplifier
+    TEXT_SIMPLIFIER_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Warning: text_simplifier 모듈을 찾을 수 없습니다. %s", str(e))
+    TEXT_SIMPLIFIER_AVAILABLE = False
+    FinancialTextSimplifier = None
 
 # eyetrack 모듈 import (기존 코드 재사용)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
@@ -10,20 +27,38 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
 try:
     from comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics, RealTimeComprehensionMonitor
     from hybrid_analyzer import hybrid_analyzer
-except ImportError:
-    print("Warning: eyetrack 모듈을 찾을 수 없습니다. 시뮬레이션 모드로 동작합니다.")
+    AI_MODELS_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Warning: eyetrack 모듈을 찾을 수 없습니다. 시뮬레이션 모드로 동작합니다. %s", str(e))
+    AI_MODELS_AVAILABLE = False
     ComprehensionAnalyzer = None
     ComprehensionMetrics = None
     RealTimeComprehensionMonitor = None
     hybrid_analyzer = None
 
 class EyeTrackingService:
-    """기존 eyetrack 모듈을 웹 서비스로 감싸는 서비스 레이어"""
+    """EyeTracking 서비스 - 로컬에서 실행되는 분석 엔진"""
     
     def __init__(self):
-        self.analyzer = ComprehensionAnalyzer() if ComprehensionAnalyzer else None
-        self.monitor = RealTimeComprehensionMonitor() if RealTimeComprehensionMonitor else None
+        self.analyzer = ComprehensionAnalyzer() if AI_MODELS_AVAILABLE and ComprehensionAnalyzer else None
+        self.monitor = RealTimeComprehensionMonitor() if AI_MODELS_AVAILABLE and RealTimeComprehensionMonitor else None
         self.session_data = {}  # consultation_id별 세션 데이터
+        
+        # text simplifier 실행
+        try:
+            if TEXT_SIMPLIFIER_AVAILABLE and FinancialTextSimplifier:
+                self.text_simplifier = FinancialTextSimplifier()
+                # 모델 실행
+                model_path = "./financial_simplifier_model"
+                if os.path.exists(model_path):
+                    self.text_simplifier.load_model(model_path)
+                logger.info("FinancialTextSimplifier 실행 완료")
+            else:
+                logger.info("FinancialTextSimplifier 사용 불가 - 의존성 부족")
+                self.text_simplifier = None
+        except Exception as e:
+            logger.error(f"FinancialTextSimplifier 실행 실패: {str(e)}")
+            self.text_simplifier = None
     
     def get_text_difficulty(self, section_text: str) -> float:
         """한국어 금융 약관 텍스트의 난이도 분석 (기존 로직 개선)"""
@@ -138,60 +173,61 @@ class EyeTrackingService:
         return confused_sentences[:4]
     
     def generate_ai_explanation(self, section_text: str, confused_sentences: List[int] = None) -> str:
-        """AI 설명 생성 (GPT 스타일 시뮬레이션)"""
+        """
+        AI를 사용하여 복잡한 금융 텍스트를 쉽게 설명
         
-        # 키워드 기반 설명 매핑
-        explanations_db = {
-            "중도해지": {
-                "simple": "약속한 기간 전에 예금을 찾는 것입니다.",
-                "example": "1년 약속으로 넣은 돈을 6개월 만에 찾으면 중도해지예요.",
-                "impact": "약속한 높은 이자 대신 낮은 이자만 받게 됩니다."
-            },
-            "우대금리": {
-                "simple": "조건을 맞추면 더 높은 이자를 주는 혜택입니다.",
-                "example": "급여통장으로 쓰거나 카드 사용하면 추가 이자를 받을 수 있어요.",
-                "impact": "조건 미충족시 기본 이자만 적용됩니다."
-            },
-            "예금자보호": {
-                "simple": "은행이 문제가 생겨도 돈을 보장해주는 제도입니다.",
-                "example": "개인당 최대 5천만원까지 정부가 보장해줍니다.",
-                "impact": "5천만원 초과 금액은 보장받기 어려울 수 있습니다."
-            },
-            "복리": {
-                "simple": "이자에 다시 이자가 붙는 방식입니다.",
-                "example": "100만원에 10% 이자가 붙으면, 다음엔 110만원에 10%가 붙어요.",
-                "impact": "시간이 지날수록 이자가 점점 더 많이 받게 됩니다."
-            },
-            "변동금리": {
-                "simple": "시장 상황에 따라 이자율이 바뀌는 방식입니다.",
-                "example": "처음엔 3%였다가 나중에 4%로 오르거나 2%로 내릴 수 있어요.",
-                "impact": "금리가 오르면 좋지만, 내리면 수익이 줄어들 수 있습니다."
-            }
-        }
-        
-        # 텍스트에서 키워드 찾기
-        for keyword, explanation in explanations_db.items():
-            if keyword in section_text:
-                return (f"**{keyword}**란?\n"
-                       f"• {explanation['simple']}\n"
-                       f"• {explanation['example']}\n"
-                       f"주의: {explanation['impact']}")
-        
-        # 기본 설명 (키워드가 없는 경우)
+        Args:
+            section_text: 설명이 필요한 텍스트
+            confused_sentences: 혼란스러운 문장 인덱스 목록
+            
+        Returns:
+            str: 쉽게 설명된 텍스트
+        """
+        try:
+            # Text simplifier가 있으면 사용
+            if self.text_simplifier:
+                # 간단한 설명 생성
+                simplified = self.text_simplifier.simplify_text(
+                    f"다음 금융 용어나 문장을 초등학생도 이해할 수 있게 쉽게 설명해주세요: {section_text}",
+                    max_length=200
+                )
+                
+                # 결과 포맷팅
+                explanation = f"**쉽게 설명해 드릴게요**\n• {simplified}"
+                
+                # 혼란스러운 문장이 있으면 추가 정보 제공
+                if confused_sentences and len(confused_sentences) > 0:
+                    explanation += (f"\n\n**이 부분이 어려우셨나요?**\n"
+                                  f"• {len(confused_sentences)}개 문장이 특히 어려울 수 있어요.\n"
+                                  "• 천천히 다시 읽어보시고, 궁금한 점은 언제든지 질문해주세요.")
+                
+                return explanation
+            
+            # Text simplifier가 없을 경우 기본 설명
+            return self._generate_fallback_explanation(section_text, confused_sentences)
+            
+        except Exception as e:
+            logger.error(f"Error generating AI explanation: {str(e)}")
+            return self._generate_fallback_explanation(section_text, confused_sentences)
+    
+    def _generate_fallback_explanation(self, section_text: str, confused_sentences: List[int] = None) -> str:
+        """AI 모델을 사용할 수 없을 때 기본 설명 생성"""
         if confused_sentences and len(confused_sentences) > 0:
-            return (f"**이 부분이 복잡하신가요?**\n"
-                   f"• 금융 약관에는 법적 보호를 위한 중요한 내용들이 포함되어 있습니다.\n"
-                   f"• 천천히 읽어보시고, 궁금한 점은 언제든 문의하세요.\n"
-                   f"주의: 특히 {len(confused_sentences)}개 문장은 주의 깊게 확인해보세요.")
+            return (
+                f"**이해가 어려우신가요?**\n"
+                f"• 이 부분은 {len(confused_sentences)}개의 어려운 문장이 포함되어 있어요.\n"
+                "• 천천히 다시 읽어보시고, 궁금한 점은 언제든지 질문해주세요."
+            )
         
-        return ("**약관 내용 안내**\n"
-               "• 이 내용은 상품의 중요한 조건들을 설명하고 있습니다.\n"
-               "• 이해가 어려우시면 언제든지 직원에게 설명을 요청하세요.\n"
-               "주의: 가입 전에 모든 조건을 충분히 이해하시는 것이 중요합니다.")
+        return (
+            "**이해를 돕기 위한 설명**\n"
+            "• 이 내용은 금융 상품의 중요한 조건을 설명하고 있어요.\n"
+            "• 이해가 어려운 부분이 있으시면 언제든지 문의해 주세요."
+        )
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
                                     section_text: str, reading_time: float, 
-                                    gaze_data: Optional[Dict] = None) -> Dict:
+                                    gaze_data: Optional[Dict] = None) -> Dict[str, Any]:
         """읽기 세션 분석 (메인 API 함수)"""
         
         try:
@@ -327,6 +363,119 @@ class EyeTrackingService:
             'session_duration': (datetime.now(timezone.utc) - session['start_time']).total_seconds() / 60,
             'last_updated': sections[-1]['timestamp'].isoformat() if sections else None
         }
+
+
+    def process_gaze_data(self, consultation_id: str, gaze_data: Dict) -> Dict[str, Any]:
+        """실시간 시선 데이터 처리 및 분석"""
+        try:
+            # 세션 데이터 초기화
+            if consultation_id not in self.session_data:
+                self.session_data[consultation_id] = {
+                    'sections': [],
+                    'start_time': datetime.now(timezone.utc),
+                    'gaze_points': []
+                }
+
+            # 시선 데이터 저장
+            self.session_data[consultation_id]['gaze_points'].append({
+                'x': gaze_data.get('x', 0),
+                'y': gaze_data.get('y', 0),
+                'timestamp': gaze_data.get('timestamp', datetime.now().timestamp()),
+                'confidence': gaze_data.get('confidence', 0.0)
+            })
+
+            # 최근 시선 데이터 분석 (간단한 패턴 분석)
+            recent_points = self.session_data[consultation_id]['gaze_points'][-10:]
+
+            # 시선 분산도 계산 (혼란도 지표)
+            if len(recent_points) >= 3:
+                x_coords = [p['x'] for p in recent_points]
+                y_coords = [p['y'] for p in recent_points]
+
+                x_variance = sum([(x - sum(x_coords)/len(x_coords))**2 for x in x_coords]) / len(x_coords)
+                y_variance = sum([(y - sum(y_coords)/len(y_coords))**2 for y in y_coords]) / len(y_coords)
+
+                gaze_dispersion = (x_variance + y_variance) / 2
+                confusion_indicator = min(gaze_dispersion / 10000, 1.0)  # 정규화
+            else:
+                confusion_indicator = 0.0
+
+            return {
+                "consultation_id": consultation_id,
+                "gaze_quality": "good" if gaze_data.get('confidence', 0) > 0.8 else "poor",
+                "confusion_indicator": confusion_indicator,
+                "total_gaze_points": len(self.session_data[consultation_id]['gaze_points']),
+                "analysis_timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"시선 데이터 처리 오류: {str(e)}")
+            return {
+                "consultation_id": consultation_id,
+                "gaze_quality": "error",
+                "confusion_indicator": 0.0,
+                "error_message": str(e),
+                "analysis_timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+    def get_reading_progress(self, consultation_id: str) -> Dict[str, Any]:
+        """읽기 진행률 조회"""
+        try:
+            if consultation_id not in self.session_data:
+                return {
+                    "percentage": 0,
+                    "current_section": "시작 전",
+                    "sections_completed": 0,
+                    "total_sections": 0,
+                    "time_remaining": 0
+                }
+
+            session = self.session_data[consultation_id]
+            sections = session.get('sections', [])
+
+            if not sections:
+                return {
+                    "percentage": 0,
+                    "current_section": "분석 대기중",
+                    "sections_completed": 0,
+                    "total_sections": 0,
+                    "time_remaining": 0
+                }
+
+            # 가정: 일반적인 금융상품 설명서는 약 8-10개 섹션으로 구성
+            estimated_total_sections = 8
+            sections_completed = len(sections)
+
+            # 진행률 계산
+            progress_percentage = min((sections_completed / estimated_total_sections) * 100, 100)
+
+            # 평균 읽기 시간 기반 남은 시간 추정
+            if sections_completed > 0:
+                session_duration = (datetime.now(timezone.utc) - session['start_time']).total_seconds() / 60
+                avg_time_per_section = session_duration / sections_completed
+                remaining_sections = max(estimated_total_sections - sections_completed, 0)
+                estimated_time_remaining = remaining_sections * avg_time_per_section
+            else:
+                estimated_time_remaining = 15  # 기본값: 15분
+
+            return {
+                "percentage": round(progress_percentage, 1),
+                "current_section": sections[-1]['section_name'] if sections else "진행 중",
+                "sections_completed": sections_completed,
+                "total_sections": estimated_total_sections,
+                "time_remaining": round(estimated_time_remaining, 1)
+            }
+
+        except Exception as e:
+            logger.error(f"읽기 진행률 조회 오류: {str(e)}")
+            return {
+                "percentage": 0,
+                "current_section": "오류",
+                "sections_completed": 0,
+                "total_sections": 0,
+                "time_remaining": 0
+            }
+
 
 # 전역 서비스 인스턴스
 eyetrack_service = EyeTrackingService()

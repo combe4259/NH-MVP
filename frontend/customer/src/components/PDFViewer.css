@@ -26,6 +26,22 @@
   border-bottom: 3px solid rgba(0, 100, 0, 1);
 }
 
+/* 어려운 문장 밑줄 스타일 */
+.sentence-underline {
+  background-color: transparent !important;
+  border-bottom: 3px solid #ffc107 !important; /* 노란색 밑줄 */
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out;
+  position: absolute !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+}
+
+.sentence-underline:hover {
+  border-bottom: 4px solid #ffc107 !important;
+  background-color: rgba(255, 193, 7, 0.1) !important;
+}
+
 /* 팝업 스타일 */
 .pdf-popup {
   background-color: white;

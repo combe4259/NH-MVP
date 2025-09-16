@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import axios from 'axios';
 import './App.css';
 import AIAssistant from './components/AIAssistant';
@@ -60,11 +61,10 @@ function App() {
     simpleExample?: string;
   } | null>(null);
   const [highlightedTexts, setHighlightedTexts] = useState<HighlightedText[]>([]);
+  // ★★★ 단순한 useState로 변경 ★★★
   const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([]);
   const [mainTerms, setMainTerms] = useState<{term: string, definition: string}[]>([]);
 
-  // Use useRef instead of state to avoid re-renders
-  const lastAnalyzedSectionRef = useRef<string | null>(null);
 
   const analyzeTextContent = useCallback(async (sectionName: string, sectionText: string) => {
     try {
@@ -76,23 +76,14 @@ function App() {
 
       const analysisData = response.data;
 
-      // API 응답 대신 우리 목업데이터 사용 (테스트용)
+      // 전체 문장으로 검색하도록 수정
       const mockDifficultSentences: DifficultSentence[] = [
         {
           sentence: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
           sentence_id: 'sentence_001',
           difficulty_score: 0.8,
           simplified_explanation: '법원에서 계좌를 막거나, 다른 사람이 그 돈에 대한 권리를 주장하면, 예금을 찾을 수 없게 됩니다.',
-          original_position: 1,
-          location: {
-            page_number: 1,
-            page_width: 595,  // A4 페이지 너비 (pt)
-            page_height: 842, // A4 페이지 높이 (pt)
-            x: 100,           // 실제 PDF에서 찾을 위치 (pt)
-            y: 400,           // 실제 PDF에서 찾을 위치 (pt)
-            width: 400,
-            height: 25
-          }
+          original_position: 1
         }
       ];
 
@@ -123,8 +114,8 @@ function App() {
 
     } catch (error) {
       console.error('텍스트 분석 실패:', error);
-      // 폴백으로 특정 문장 목업데이터 사용
-      setSpecificMockData();
+      // 폴백으로 특정 문장 목업데이터 사용 - 좌표 덮어쓰기 방지를 위해 주석 처리
+      // setSpecificMockData();
     }
   }, []);
 
@@ -178,8 +169,8 @@ function App() {
       }
     } catch (error) {
       console.error('분석 데이터 전송 실패:', error);
-      // 폴백으로 특정 문장 목업데이터 사용
-      setSpecificMockData();
+      // 폴백으로 특정 문장 목업데이터 사용 - 좌표 덮어쓰기 방지를 위해 주석 처리
+      // setSpecificMockData();
     }
   }, []);
 
@@ -220,18 +211,15 @@ function App() {
   useEffect(() => {
     if (!isTracking) return;
 
-    if (currentSection && currentSection !== lastAnalyzedSectionRef.current) {
-      console.log('Analyzing new section:', currentSection);
-      const timer = setTimeout(() => {
-        // 기존 아이트래킹 분석
-        sendAnalysisData(currentSection, '상품의 주요 내용에 대한 설명입니다.', 5000);
-        // 텍스트 분석
-        analyzeTextContent(currentSection, '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다. 예금자보호법에 따른 보호 한도는 5천만원입니다.');
-        lastAnalyzedSectionRef.current = currentSection;
-      }, 5000);
+    // 단순화: 컴포넌트 마운트 시 한 번만 분석 실행
+    const timer = setTimeout(() => {
+      // 기존 아이트래킹 분석
+      sendAnalysisData(currentSection, '상품의 주요 내용에 대한 설명입니다.', 5000);
+      // 텍스트 분석
+      analyzeTextContent(currentSection, '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다. 예금자보호법에 따른 보호 한도는 5천만원입니다.');
+    }, 2000);
 
-      return () => clearTimeout(timer);
-    }
+    return () => clearTimeout(timer);
   }, [isTracking, currentSection, sendAnalysisData, analyzeTextContent]);
 
   // AI 상태 주기적 확인 (3초마다)
@@ -242,10 +230,11 @@ function App() {
     return () => clearInterval(statusInterval);
   }, [isTracking, checkAIStatus]);
 
-  const handleAIHelperDismiss = () => {
+  // AI 도우미 닫기 핸들러
+  const handleAIHelperDismiss = useCallback(() => {
     setShowAIHelper(false);
     setAiSuggestion(null);
-  };
+  }, []);
 
   const handleRequestMoreInfo = (topic: string) => {
     console.log('추가 설명 요청:', topic);
@@ -319,14 +308,16 @@ function App() {
     ]);
   };
 
-  const handleSentenceClick = (sentence: DifficultSentence) => {
+  // 문장 클릭 핸들러
+  const handleSentenceClick = useCallback((sentence: DifficultSentence) => {
+    console.log('선택된 문장:', sentence.sentence);
     setAiSuggestion({
       section: sentence.sentence.substring(0, 20) + '...',
       explanation: sentence.simplified_explanation,
       simpleExample: '구체적인 예시나 추가 설명이 필요하시면 직원에게 문의해 주세요.'
     });
     setShowAIHelper(true);
-  };
+  }, []);
 
   // Raw 얼굴 감정 데이터만 전송 (판단은 AI 서버에서)
   const sendRawEmotionData = useCallback(async (emotions: any) => {
@@ -417,21 +408,14 @@ function App() {
             <div className="status-bar">
               <div className="status-item">
                 <span className="status-label">상담 상품</span>
-                <span className="status-value">{currentSection || '정기 예금'}</span>
               </div>
             </div>
-            <div className="document-container">
-              <PDFViewer
-                fileUrl="/NH내가Green초록세상예금.pdf"
-                highlightedTexts={highlightedTexts}
-                difficultSentences={difficultSentences}
-                onTextSelect={(text) => {
-                  console.log('선택된 텍스트:', text);
-                }}
-                onSentenceClick={handleSentenceClick}
-              />
-              {/* AI 도우미 우측 하단 팝업 제거 */}
-            </div>
+            <PDFViewer
+              fileUrl="/NH내가Green초록세상예금.pdf"
+              highlightedTexts={highlightedTexts}
+              difficultSentences={difficultSentences}
+              onSentenceClick={handleSentenceClick}
+            />
           </div>
 
           {/* 오른쪽 사이드바 */}
@@ -446,20 +430,6 @@ function App() {
                   <p className="insight-intro">
                     어려워하시는 부분을 감지했습니다
                   </p>
-                  <div className="confused-sections">
-                    {confusedSections.map(section => (
-                      <div key={section.id} className="confused-item">
-                        <strong>{section.title}</strong>
-                        <p>{section.content}</p>
-                        <button
-                          className="explain-btn"
-                          onClick={() => setShowAIHelper(true)}
-                        >
-                          쉽게 설명 듣기
-                        </button>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             )}
@@ -493,7 +463,7 @@ function App() {
               </div>
             </div>
           </aside>
-        </div>
+        </div> {/* main-grid 닫기 */}
       </main>
 
       {/* 하단 액션 바 */}

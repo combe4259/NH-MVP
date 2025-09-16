@@ -44,213 +44,92 @@ interface PDFViewerProps {
     onSentenceClick?: (sentence: DifficultSentence) => void;
 }
 
-// ★★★ 1. 밑줄 오버레이 컴포넌트 분리 ★★★
-const UnderlineOverlay = React.memo(({
-    sentences,
-    dimensions,
-    containerRef,
-    onSentenceClick
-}: {
-    sentences: DifficultSentence[];
-    dimensions: { width: number; height: number } | null;
-    containerRef: React.RefObject<HTMLDivElement | null>;
-    onSentenceClick: (sentence: DifficultSentence, event: React.MouseEvent) => void;
-}) => {
-    // 안정적인 좌표 계산 함수
-    const calculateScaledPosition = useCallback((sentence: DifficultSentence) => {
-        try {
-            const location = sentence.location;
-
-            if (!location || !dimensions || !containerRef.current) {
-                return { display: 'none' };
-            }
-
-            if (location.page_width <= 0 || location.page_height <= 0 ||
-                location.width <= 0 || location.height <= 0) {
-                return { display: 'none' };
-            }
-
-            const containerRect = containerRef.current.getBoundingClientRect();
-            const pdfPageRect = containerRef.current.querySelector('.rpv-core__page-layer')?.getBoundingClientRect();
-
-            if (!pdfPageRect) {
-                return { display: 'none' };
-            }
-
-            const scaleX = dimensions.width / location.page_width;
-            const scaleY = dimensions.height / location.page_height;
-
-            if (!isFinite(scaleX) || !isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
-                return { display: 'none' };
-            }
-
-            const topOffset = pdfPageRect.top - containerRect.top;
-            const leftOffset = pdfPageRect.left - containerRect.left;
-
-            const finalLeft = leftOffset + location.x * scaleX;
-            const finalTop = topOffset + location.y * scaleY;
-            const finalWidth = location.width * scaleX;
-            const finalHeight = location.height * scaleY;
-
-            if (!isFinite(finalLeft) || !isFinite(finalTop) || finalWidth <= 0 || finalHeight <= 0) {
-                return { display: 'none' };
-            }
-
-            return {
-                position: 'absolute' as const,
-                left: `${finalLeft}px`,
-                top: `${finalTop}px`,
-                width: `${finalWidth}px`,
-                height: `${finalHeight}px`,
-                borderBottom: '3px solid #ffc107',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                pointerEvents: 'all' as const,
-                borderRadius: '2px'
-            };
-        } catch (error) {
-            console.error('좌표 계산 중 오류 발생:', error);
-            return { display: 'none' };
-        }
-    }, [dimensions, containerRef]);
-
-    return (
-        <div
-            className="coordinate-based-overlay"
-            style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                pointerEvents: 'none',
-                zIndex: 5
-            }}
-        >
-            {sentences.map((sentence) => (
-                <div
-                    key={sentence.sentence_id}
-                    className="coordinate-sentence-marker"
-                    style={calculateScaledPosition(sentence)}
-                    onClick={(e) => onSentenceClick(sentence, e)}
-                    title={`클릭하여 설명 보기: ${sentence.sentence.substring(0, 30)}...`}
-                >
-                    {!sentence.location && (
-                        <span style={{ fontSize: '12px', color: '#666' }}>
-                            {sentence.sentence.substring(0, 50)}...
-                        </span>
-                    )}
-                </div>
-            ))}
-        </div>
-    );
-});
-
 const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], difficultSentences = [], onTextSelect, onSentenceClick }) => {
     const [showPopup, setShowPopup] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
     const [currentExplanation, setCurrentExplanation] = useState('');
     const [currentSentence, setCurrentSentence] = useState<DifficultSentence | null>(null);
     const [pdfLoaded, setPdfLoaded] = useState(false);
-    const [renderedPdfDimensions, setRenderedPdfDimensions] = useState<{width: number, height: number} | null>(null);
-    const viewerContainerRef = useRef<HTMLDivElement>(null);
 
-    const highlightedTextsRef = useRef(highlightedTexts);
-    useEffect(() => { highlightedTextsRef.current = highlightedTexts; }, [highlightedTexts]);
+    const viewerContainerRef = useRef<HTMLDivElement>(null);
 
     const defaultLayoutPluginInstance = defaultLayoutPlugin();
 
-    // ★★★ 안정적인 클릭 핸들러 ★★★
-    const handleSentenceClick = useCallback((sentence: DifficultSentence, event: React.MouseEvent) => {
-        if (!viewerContainerRef.current) return;
-
-        // 클릭된 요소의 현재 위치를 바로 계산 (리렌더링 영향 없음)
-        const containerRect = viewerContainerRef.current.getBoundingClientRect();
-        const underlineRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-
-        // 상대 좌표 계산
-        const relativeTop = underlineRect.bottom - containerRect.top + 5;
-        const relativeLeft = underlineRect.left - containerRect.left;
-
-        // 팝업 관련 state 한 번에 설정
-        setCurrentSentence(sentence);
-        setPopupPosition({ top: relativeTop, left: relativeLeft });
-        setShowPopup(true);
-
-        if (onSentenceClick) {
-            onSentenceClick(sentence);
-        }
-    }, [onSentenceClick]);
-
-    // PDF 크기 감지 함수 (여러 방법으로 시도)
-    const detectPdfDimensions = (attempt: number = 0) => {
-        const selectors = [
-            '.rpv-core__inner-pages',
-            '.rpv-core__page-layer',
-            '.rpv-core__canvas-layer canvas',
-            '.rpv-core__text-layer'
-        ];
-
-        for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element) {
-                const rect = element.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                    setRenderedPdfDimensions({
-                        width: rect.width,
-                        height: rect.height
-                    });
-                    console.log(`PDF 크기 감지 성공 (${selector}):`, { width: rect.width, height: rect.height });
-                    return;
-                }
-            }
-        }
-
-        // 크기 감지 실패 시 재시도 (최대 5번)
-        if (attempt < 5) {
-            setTimeout(() => detectPdfDimensions(attempt + 1), 200 * (attempt + 1));
-        } else {
-            console.warn('PDF 크기 감지 실패 - 기본값 사용');
-            setRenderedPdfDimensions({ width: 595, height: 842 }); // A4 기본 크기
-        }
-    };
-
-    // PDF 렌더링 완료 시 크기 감지
-    const handleDocumentLoad = () => {
-        setPdfLoaded(true);
-        setTimeout(() => detectPdfDimensions(), 300);
-    };
-
     const searchPluginInstance = searchPlugin({
-        renderHighlights: (renderProps: RenderHighlightsProps) => (
-            <>
-                {renderProps.highlightAreas.map((area, index) => {
-                    const extendedArea = area as ExtendedHighlightArea;
-                    if (!extendedArea.highlightContent) return null;
+        renderHighlights: (renderProps: RenderHighlightsProps) => {
+            return (
+                <>
+                    {renderProps.highlightAreas.map((area, index) => {
+                        const keyword = (area as any).keywordStr;
+                        if (!keyword?.trim()) return null;
+                        const finalKeyword = keyword.trim();
 
-                    const keyword = extendedArea.highlightContent.trim();
-                    if (!keyword) return null;
+                        // 주요 용어 확인
+                        const termMatch = highlightedTexts.find(ht =>
+                            typeof ht.text === 'string' &&
+                            (ht.text.includes(finalKeyword) || finalKeyword.includes(ht.text))
+                        );
 
-                    // 오직 주요 용어(highlightedTexts)만 처리
-                    const match = highlightedTextsRef.current.find(ht =>
-                        typeof ht.text === 'string' &&
-                        (ht.text.includes(keyword) || keyword.includes(ht.text))
-                    );
+                        if (termMatch) {
+                            return (
+                                <div
+                                    key={`term-${index}`}
+                                    className="custom-highlight-underline"
+                                    style={renderProps.getCssProperties(area)}
+                                    onClick={() => handleHighlightClick(area, termMatch.explanation)}
+                                    title={termMatch.explanation}
+                                />
+                            );
+                        }
 
-                    if (!match) return null;
+                        // 어려운 문장 확인
+                        const sentenceMatch = difficultSentences.find(s =>
+                            s.sentence.includes(finalKeyword) || finalKeyword.includes(s.sentence)
+                        );
 
-                    return (
-                        <div
-                            key={index}
-                            className="custom-highlight-underline"
-                            style={Object.assign({}, renderProps.getCssProperties(area))}
-                            onClick={() => handleHighlightClick(area, match.explanation)}
-                            title={match.explanation}
-                        />
-                    );
-                })}
-            </>
-        ),
+                        if (sentenceMatch) {
+                            return (
+                                <div
+                                    key={`sentence-${index}`}
+                                    className="sentence-underline"
+                                    style={{
+                                        ...renderProps.getCssProperties(area),
+                                        position: 'absolute',
+                                        borderBottom: '3px solid #ffc107 !important',
+                                        backgroundColor: 'transparent !important',
+                                        cursor: 'pointer',
+                                        zIndex: 10
+                                    }}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+
+                                        if (!viewerContainerRef.current) return;
+
+                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                        const containerRect = viewerContainerRef.current.getBoundingClientRect();
+
+                                        setCurrentSentence(sentenceMatch);
+                                        setPopupPosition({
+                                            top: rect.bottom - containerRect.top + 10,
+                                            left: rect.left - containerRect.left
+                                        });
+                                        setShowPopup(true);
+
+                                        if (onSentenceClick) {
+                                            onSentenceClick(sentenceMatch);
+                                        }
+                                    }}
+                                    title={`클릭하여 설명 보기: ${sentenceMatch.sentence.substring(0, 30)}...`}
+                                />
+                            );
+                        }
+
+                        return null;
+                    })}
+                </>
+            );
+        },
     });
 
     const { highlight } = searchPluginInstance;
@@ -258,18 +137,25 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
     const keywordsRef = useRef<string>('');
 
     useEffect(() => {
-        if (highlight && pdfLoaded && highlightedTexts.length > 0) {
-            // 오직 주요 용어(highlightedTexts)만 하이라이트
-            const keywords = highlightedTexts.map(ht => ht.text);
-            const keywordsString = keywords.join(',');
+        if (highlight && pdfLoaded) {
+            const termKeywords = highlightedTexts.map(ht => ht.text);
+            const sentenceKeywords = difficultSentences.map(s => s.sentence);
+            const allKeywords = [...termKeywords, ...sentenceKeywords];
+            const keywordsString = allKeywords.join('|||');
 
-            // 키워드가 실제로 변경된 경우에만 하이라이트
-            if (keywordsString !== keywordsRef.current) {
+            console.log('PDFViewer useEffect 실행:');
+            console.log('- pdfLoaded:', pdfLoaded);
+            console.log('- highlightedTexts:', highlightedTexts);
+            console.log('- difficultSentences:', difficultSentences);
+            console.log('- allKeywords:', allKeywords);
+
+            if (keywordsString !== keywordsRef.current && allKeywords.length > 0) {
                 keywordsRef.current = keywordsString;
-                highlight(keywords);
+                highlight(allKeywords);
+                console.log('✅ 검색 실행 - 키워드:', allKeywords);
             }
         }
-    }, [pdfLoaded, highlightedTexts]);
+    }, [pdfLoaded, highlightedTexts, difficultSentences, highlight]);
 
     const handleHighlightClick = (area: HighlightArea, explanation: string) => {
         if (!viewerContainerRef.current) return;
@@ -283,6 +169,21 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
         setShowPopup(true);
     };
 
+    const handleSentenceClick = useCallback((sentence: DifficultSentence, area: HighlightArea, event: React.MouseEvent) => {
+        if (!viewerContainerRef.current) return;
+
+        const containerRect = viewerContainerRef.current.getBoundingClientRect();
+        const relativeLeft = (area.left / 100) * containerRect.width;
+        const relativeTop = (area.top / 100) * containerRect.height + (area.height / 100) * containerRect.height + 10;
+
+        setCurrentSentence(sentence);
+        setPopupPosition({ top: relativeTop, left: relativeLeft });
+        setShowPopup(true);
+
+        if (onSentenceClick) {
+            onSentenceClick(sentence);
+        }
+    }, [onSentenceClick]);
 
     const handleTextSelection = () => {
         const selection = window.getSelection();
@@ -292,10 +193,14 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
         }
     };
 
+    const handleDocumentLoad = useCallback(() => {
+        setPdfLoaded(true);
+    }, []);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
-            if (!target.closest('.pdf-popup') && !target.closest('.custom-highlight-underline')) {
+            if (!target.closest('.pdf-popup') && !target.closest('.custom-highlight-underline') && !target.closest('.sentence-underline')) {
                 setShowPopup(false);
             }
         };
@@ -328,16 +233,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                     />
                 </div>
 
-                {/* ★★★ 분리된 밑줄 오버레이 컴포넌트 사용 ★★★ */}
-                {pdfLoaded && difficultSentences.length > 0 && (
-                    <UnderlineOverlay
-                        sentences={difficultSentences}
-                        dimensions={renderedPdfDimensions}
-                        containerRef={viewerContainerRef}
-                        onSentenceClick={handleSentenceClick}
-                    />
-                )}
-
                 {showPopup && currentSentence && (
                     <div
                         className="sentence-popup ai-style"
@@ -360,13 +255,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                             </div>
 
                             <div className="panel-content">
-                                {/* 원본 내용 */}
                                 <div className="original-content">
                                     <span className="label">원본 내용</span>
                                     <p className="original-text">{currentSentence.sentence}</p>
                                 </div>
 
-                                {/* 쉬운 설명 */}
                                 <div className="simple-explanation">
                                     <span className="label">쉽게 풀어서 설명</span>
                                     <div className="explanation-box">
@@ -374,7 +267,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                                     </div>
                                 </div>
 
-                                {/* 실생활 예시 */}
                                 <div className="example-section">
                                     <span className="label">실생활 예시</span>
                                     <div className="example-box">
