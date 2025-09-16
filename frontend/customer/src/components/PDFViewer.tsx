@@ -109,10 +109,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                         const containerRect = viewerContainerRef.current.getBoundingClientRect();
 
+                                        console.log('밑줄 위치:', rect);
+                                        console.log('컨테이너 위치:', containerRect);
+
                                         setCurrentSentence(sentenceMatch);
                                         setPopupPosition({
                                             top: rect.bottom - containerRect.top + 10,
-                                            left: rect.left - containerRect.left
+                                            left: containerRect.width / 2 - 200 // 중앙 정렬을 위해 팝업 너비의 절반만큼 빼기
                                         });
                                         setShowPopup(true);
 
@@ -238,9 +241,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                         className="sentence-popup ai-style"
                         style={{
                             position: 'absolute',
-                            left: `${Math.min(popupPosition.left, window.innerWidth - 420)}px`,
-                            top: `${Math.max(popupPosition.top + 10, 10)}px`,
-                            transform: popupPosition.left > window.innerWidth - 420 ? 'translateX(-100%)' : 'none',
+                            left: '50%',
+                            top: `${popupPosition.top}px`,
+                            transform: 'translateX(-50%)',
                             zIndex: 1000,
                             width: '400px'
                         }}

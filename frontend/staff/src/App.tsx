@@ -172,7 +172,7 @@ function App() {
     const interval = setInterval(fetchCustomersData, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchCustomersData]);
 
   const getPhaseLabel = (phase: string) => {
     const labels: { [key: string]: string } = {

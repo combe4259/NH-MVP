@@ -26,7 +26,13 @@ export interface AnalysisRequest {
   current_section: string;
   section_text: string;
   reading_time: number;
-  gaze_data?: any;
+  gaze_data?: {
+    raw_points?: Array<{x: number, y: number, timestamp: number, confidence?: number}>;
+    total_duration?: number;
+    fixation_count?: number;
+    saccade_count?: number;
+    regression_count?: number;
+  };
 }
 
 export interface ConfusionStatus {
@@ -77,9 +83,9 @@ export const customerAPI = {
     return response.data;
   },
 
-  // 현재 혼란도 상태 조회 (AI 도우미용)
-  async getConfusionStatus(consultationId: string): Promise<ConfusionStatus> {
-    const response = await api.get(`/api/eyetracking/confusion-status/${consultationId}`);
+  // AI 도우미 상태 조회
+  async getAIStatus(consultationId: string) {
+    const response = await api.get(`/api/eyetracking/ai-status/${consultationId}`);
     return response.data;
   },
 

@@ -1,10 +1,23 @@
 import sys
 import os
-from typing import Dict, List, Optional, Any
 import asyncio
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Dict, List, Optional, Any, Deque, Tuple
+from collections import deque, defaultdict
+import numpy as np
+
+# Pydantic 모델 임포트
+from models.schemas import (
+    GazePoint,
+    FixationData,
+    SaccadeData,
+    TextElement,
+    ReadingMetrics,
+    ReadingDataRequest,
+    ReadingDataResponse
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,22 +40,51 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
 try:
     from comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics, RealTimeComprehensionMonitor
     from hybrid_analyzer import hybrid_analyzer
+    from reading_data_collector import ReadingDataCollector
+    from gaze_tracker import EyeGazeTracker
+    from fixation_detector import FixationDetector
     AI_MODELS_AVAILABLE = True
+    EYETRACK_MODULES_AVAILABLE = True
 except ImportError as e:
     logger.warning("Warning: eyetrack 모듈을 찾을 수 없습니다. 시뮬레이션 모드로 동작합니다. %s", str(e))
     AI_MODELS_AVAILABLE = False
+    EYETRACK_MODULES_AVAILABLE = False
     ComprehensionAnalyzer = None
     ComprehensionMetrics = None
     RealTimeComprehensionMonitor = None
     hybrid_analyzer = None
+    ReadingDataCollector = None
+    EyeGazeTracker = None
+    FixationDetector = None
 
 class EyeTrackingService:
-    """EyeTracking 서비스 - 로컬에서 실행되는 분석 엔진"""
+    """시선 추적 및 분석을 위한 서비스 클래스"""
     
     def __init__(self):
+        # 기존 분석기 초기화
         self.analyzer = ComprehensionAnalyzer() if AI_MODELS_AVAILABLE and ComprehensionAnalyzer else None
         self.monitor = RealTimeComprehensionMonitor() if AI_MODELS_AVAILABLE and RealTimeComprehensionMonitor else None
         self.session_data = {}  # consultation_id별 세션 데이터
+
+        # 실시간 시선추적 컴포넌트 초기화
+        if EYETRACK_MODULES_AVAILABLE:
+            try:
+                self.reading_data_collectors: Dict[str, Any] = {}  # consultation_id별 collector
+                self.gaze_tracker = EyeGazeTracker() if EyeGazeTracker else None
+                logger.info("실시간 시선추적 컴포넌트 로드 완료")
+            except Exception as e:
+                logger.warning(f"시선추적 컴포넌트 로드 실패: {e}")
+                self.reading_data_collectors = {}
+                self.gaze_tracker = None
+        else:
+            self.reading_data_collectors = {}
+            self.gaze_tracker = None
+
+        # 시선 추적 관련 초기화
+        self.fixation_threshold = 0.02  # 고정점 감지 임계값 (화면 크기의 2%)
+        self.min_fixation_duration = timedelta(seconds=0.1)  # 최소 고정 시간
+        self.max_fixation_duration = timedelta(seconds=1.0)  # 최대 고정 시간
+        self.gaze_history_window = timedelta(seconds=5.0)  # 시선 이력 유지 시간
         
         # text simplifier 실행
         try:
@@ -366,8 +408,12 @@ class EyeTrackingService:
 
 
     def process_gaze_data(self, consultation_id: str, gaze_data: Dict) -> Dict[str, Any]:
-        """실시간 시선 데이터 처리 및 분석"""
+        """실시간 시선 데이터 처리 및 분석 (reading_data_collector 통합)"""
         try:
+            # 실시간 데이터 컬렉터 초기화
+            if consultation_id not in self.reading_data_collectors and EYETRACK_MODULES_AVAILABLE and ReadingDataCollector:
+                self.reading_data_collectors[consultation_id] = ReadingDataCollector()
+
             # 세션 데이터 초기화
             if consultation_id not in self.session_data:
                 self.session_data[consultation_id] = {
@@ -377,12 +423,24 @@ class EyeTrackingService:
                 }
 
             # 시선 데이터 저장
-            self.session_data[consultation_id]['gaze_points'].append({
+            gaze_point = {
                 'x': gaze_data.get('x', 0),
                 'y': gaze_data.get('y', 0),
                 'timestamp': gaze_data.get('timestamp', datetime.now().timestamp()),
                 'confidence': gaze_data.get('confidence', 0.0)
-            })
+            }
+            self.session_data[consultation_id]['gaze_points'].append(gaze_point)
+
+            # reading_data_collector로 실시간 처리
+            ai_data = None
+            if consultation_id in self.reading_data_collectors:
+                collector = self.reading_data_collectors[consultation_id]
+                ai_data = collector.process_gaze_point(
+                    gaze_point['x'],
+                    gaze_point['y'],
+                    current_page=1,
+                    timestamp=gaze_point['timestamp']
+                )
 
             # 최근 시선 데이터 분석 (간단한 패턴 분석)
             recent_points = self.session_data[consultation_id]['gaze_points'][-10:]
@@ -400,13 +458,20 @@ class EyeTrackingService:
             else:
                 confusion_indicator = 0.0
 
-            return {
+            result = {
                 "consultation_id": consultation_id,
                 "gaze_quality": "good" if gaze_data.get('confidence', 0) > 0.8 else "poor",
                 "confusion_indicator": confusion_indicator,
                 "total_gaze_points": len(self.session_data[consultation_id]['gaze_points']),
                 "analysis_timestamp": datetime.now(timezone.utc).isoformat()
             }
+
+            # AI용 실시간 데이터 추가 (reading_data_collector에서)
+            if ai_data:
+                result["ai_ready_data"] = ai_data
+                result["behavioral_metrics"] = ai_data.get("behavioral_metrics_window_1min", {})
+
+            return result
 
         except Exception as e:
             logger.error(f"시선 데이터 처리 오류: {str(e)}")
@@ -476,6 +541,336 @@ class EyeTrackingService:
                 "time_remaining": 0
             }
 
+
+    # ===== 시선 추적 관련 메서드 =====
+    
+    def _init_session(self, consultation_id: str):
+        """새로운 세션 초기화"""
+        self.session_data[consultation_id] = {
+            'gaze_history': deque(maxlen=1000),  # 최대 1000개의 시선 이력 유지
+            'fixations': [],  # 감지된 고정점 목록
+            'current_fixation': None,  # 현재 추적 중인 고정점
+            'last_metrics_update': datetime.now(timezone.utc),
+            'word_fixation_counts': defaultdict(timedelta),  # 단어별 누적 고정 시간
+            'line_fixation_counts': defaultdict(timedelta),  # 줄별 누적 고정 시간
+        }
+    
+    async def process_reading_data(self, reading_data: ReadingDataRequest) -> ReadingDataResponse:
+        """
+        프론트엔드로부터 받은 읽기 데이터를 처리하고 분석 결과를 반환
+        
+        Args:
+            reading_data: 프론트엔드에서 전송한 시선 추적 데이터
+            
+        Returns:
+            ReadingDataResponse: 분석 결과가 포함된 응답 객체
+        """
+        # 세션 데이터 초기화 (없는 경우)
+        if reading_data.consultation_id not in self.session_data:
+            self._init_session(reading_data.consultation_id)
+            
+        session = self.session_data[reading_data.consultation_id]
+        
+        # 텍스트 요소 저장 (매 요청마다 업데이트)
+        session['text_elements'] = reading_data.text_elements
+        
+        # 시선 데이터 처리
+        fixations = []
+        for gaze_point in reading_data.gaze_data:
+            fixation = await self._process_gaze_point(
+                consultation_id=reading_data.consultation_id,
+                gaze_point=gaze_point,
+                text_elements=reading_data.text_elements
+            )
+            if fixation:
+                fixations.append(fixation)
+        
+        # 메트릭 계산
+        metrics = self._calculate_metrics(reading_data.consultation_id)
+        
+        # 응답 생성
+        response = ReadingDataResponse(
+            **reading_data.dict(),
+            fixations=fixations,
+            reading_metrics=metrics,
+            processed_at=datetime.now(timezone.utc)
+        )
+        
+        return response
+    
+    async def _process_gaze_point(
+        self, 
+        consultation_id: str, 
+        gaze_point: GazePoint,
+        text_elements: List[TextElement] = None
+    ) -> Optional[FixationData]:
+        """
+        개별 시선 좌표를 처리하고 고정점이 감지되면 반환
+        
+        Args:
+            consultation_id: 상담 세션 ID
+            gaze_point: 처리할 시선 좌표
+            text_elements: 현재 문서의 텍스트 요소 목록
+            
+        Returns:
+            Optional[FixationData]: 감지된 고정점이 있으면 반환, 없으면 None
+        """
+        session = self.session_data[consultation_id]
+        
+        # 시선 이력에 추가
+        session['gaze_history'].append(gaze_point)
+        
+        # 현재 고정점이 없으면 새로 시작
+        if not session['current_fixation']:
+            self._start_new_fixation(session, gaze_point)
+            return None
+            
+        # 현재 고정점에 속하는지 확인
+        if self._is_in_fixation(session, gaze_point):
+            self._update_fixation(session, gaze_point)
+            return None
+            
+        # 고정점 종료 및 반환 (텍스트 요소 정보 전달)
+        return self._finalize_fixation(session, text_elements)
+    
+    def _start_new_fixation(self, session: dict, gaze_point: GazePoint):
+        """새로운 고정점 추적을 시작"""
+        session['current_fixation'] = {
+            'start_time': gaze_point.timestamp,
+            'points': [gaze_point],
+            'sum_x': gaze_point.x,
+            'sum_y': gaze_point.y,
+            'min_x': gaze_point.x,
+            'max_x': gaze_point.x,
+            'min_y': gaze_point.y,
+            'max_y': gaze_point.y,
+        }
+    
+    def _is_in_fixation(self, session: dict, gaze_point: GazePoint) -> bool:
+        """주어진 시선 좌표가 현재 고정점에 속하는지 확인"""
+        fix = session['current_fixation']
+        if not fix:
+            return False
+            
+        # 고정점 내 분산 계산
+        dispersion_x = fix['max_x'] - fix['min_x']
+        dispersion_y = fix['max_y'] - fix['min_y']
+        max_dispersion = max(dispersion_x, dispersion_y)
+        
+        # 임계값 초과 시 고정점 종료
+        if max_dispersion > self.fixation_threshold:
+            return False
+            
+        # 중심점과의 거리 계산
+        n = len(fix['points'])
+        centroid_x = fix['sum_x'] / n
+        centroid_y = fix['sum_y'] / n
+        distance = np.sqrt((gaze_point.x - centroid_x)**2 + (gaze_point.y - centroid_y)**2)
+        
+        return distance <= self.fixation_threshold
+    
+    def _update_fixation(self, session: dict, gaze_point: GazePoint):
+        """현재 고정점을 새로운 시선 좌표로 업데이트"""
+        fix = session['current_fixation']
+        if not fix:
+            return
+            
+        fix['points'].append(gaze_point)
+        fix['sum_x'] += gaze_point.x
+        fix['sum_y'] += gaze_point.y
+        fix['min_x'] = min(fix['min_x'], gaze_point.x)
+        fix['max_x'] = max(fix['max_x'], gaze_point.x)
+        fix['min_y'] = min(fix['min_y'], gaze_point.y)
+        fix['max_y'] = max(fix['max_y'], gaze_point.y)
+    
+    def _finalize_fixation(
+        self, 
+        session: dict, 
+        text_elements: List[TextElement] = None
+    ) -> Optional[FixationData]:
+        """
+        현재 고정점을 종료하고 FixationData 객체를 반환합니다.
+        
+        Args:
+            session: 현재 세션 데이터
+            text_elements: 텍스트 요소 목록 (선택사항)
+            
+        Returns:
+            Optional[FixationData]: 완성된 고정점 데이터 또는 None
+        """
+        fix = session.get('current_fixation')
+        if not fix or len(fix['points']) < 2:
+            return None
+            
+        # 고정점 지속 시간 계산
+        duration = fix['points'][-1].timestamp - fix['points'][0].timestamp
+        
+        # 최소/최대 지속 시간 검사
+        if duration < self.min_fixation_duration or duration > self.max_fixation_duration:
+            session['current_fixation'] = None
+            return None
+            
+        # 고정점 데이터 생성
+        n = len(fix['points'])
+        centroid_x = fix['sum_x'] / n
+        centroid_y = fix['sum_y'] / n
+        
+        # 분산 계산
+        sum_sq_diff_x = sum((p.x - centroid_x)**2 for p in fix['points'])
+        sum_sq_diff_y = sum((p.y - centroid_y)**2 for p in fix['points'])
+        dispersion = np.sqrt((sum_sq_diff_x + sum_sq_diff_y) / n)
+        
+        fixation = FixationData(
+            start_timestamp=fix['points'][0].timestamp,
+            end_timestamp=fix['points'][-1].timestamp,
+            duration=duration,  # timedelta 객체로 전달
+            avg_x=centroid_x,
+            avg_y=centroid_y,
+            dispersion=dispersion
+        )
+        
+        # 세션에 고정점 추가
+        session['fixations'].append(fixation)
+        session['current_fixation'] = None
+        
+        # 단어/줄 고정 시간 업데이트 (텍스트 요소가 제공된 경우에만)
+        if text_elements:
+            self._update_fixation_counts(session, fixation, text_elements)
+        
+        return fixation
+    
+    def _update_fixation_counts(
+        self, 
+        session: dict, 
+        fixation: FixationData, 
+        text_elements: List[TextElement]
+    ) -> None:
+        """
+        고정점 정보를 바탕으로 단어/줄별 고정 시간을 업데이트
+        
+        Args:
+            session: 현재 세션 데이터
+            fixation: 고정점 데이터
+            text_elements: 매핑할 텍스트 요소 목록
+        """
+        if not text_elements:
+            return
+            
+        # 가장 가까운 텍스트 요소 찾기
+        matched_element = self._find_closest_text(
+            x=fixation.avg_x,
+            y=fixation.avg_y,
+            text_elements=text_elements
+        )
+        
+        if matched_element:
+            # 단어별 고정 시간 누적
+            session['word_fixation_counts'][matched_element.text] += fixation.duration
+            
+            # 줄별 고정 시간 누적
+            if hasattr(matched_element, 'line_number'):
+                session['line_fixation_counts'][matched_element.line_number] += fixation.duration
+    
+    def _find_closest_text(
+        self, 
+        x: float, 
+        y: float, 
+        text_elements: List[TextElement],
+        tolerance: float = 0.05  # 화면 크기의 5% 이내만 매칭
+    ) -> Optional[TextElement]:
+        """
+        주어진 좌표에서 가장 가까운 텍스트 요소를 찾기
+        
+        Args:
+            x: 정규화된 x 좌표 (0-1)
+            y: 정규화된 y 좌표 (0-1)
+            text_elements: 검색할 텍스트 요소 목록
+            tolerance: 매칭 허용 오차 (0-1, 화면 크기 대비)
+            
+        Returns:
+            Optional[TextElement]: 매칭된 가장 가까운 텍스트 요소 또는 None
+        """
+        if not text_elements:
+            return None
+            
+        # 1. 경계 상자(bbox) 내에 직접 포함되는 텍스트 찾기
+        for element in text_elements:
+            x1, y1, x2, y2 = element.bbox
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return element
+                
+        # 2. 직접 포함되는 텍스트가 없을 경우, 가장 가까운 텍스트 찾기
+        closest_element = None
+        min_distance = float('inf')
+        
+        for element in text_elements:
+            # 텍스트 요소의 중심점 계산
+            x1, y1, x2, y2 = element.bbox
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+            
+            # 유클리드 거리 계산
+            distance = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_element = element
+                
+        # 허용 오차 내에 있는 경우에만 반환
+        return closest_element if min_distance <= tolerance else None
+    
+    def _calculate_metrics(self, consultation_id: str) -> ReadingMetrics:
+        """현재까지의 시선 데이터를 기반으로 메트릭을 계산"""
+        session = self.session_data[consultation_id]
+        fixations = session['fixations']
+        
+        if not fixations:
+            return ReadingMetrics(
+                avg_fixation_duration=0,
+                fixations_per_minute=0,
+                regression_count=0
+            )
+        
+        # 평균 고정 시간 (밀리초)
+        avg_duration = sum(f.duration for f in fixations) / len(fixations)
+        
+        # 분당 고정점 수
+        time_span = (fixations[-1].end_timestamp - fixations[0].start_timestamp).total_seconds()
+        fpm = (len(fixations) / time_span) * 60 if time_span > 0 else 0
+        
+        # 회귀(재읽기) 횟수
+        regression_count = self._count_regressions(fixations)
+        
+        return ReadingMetrics(
+            avg_fixation_duration=avg_duration,
+            fixations_per_minute=fpm,
+            regression_count=regression_count
+        )
+    
+    def _count_regressions(self, fixations: List[FixationData]) -> int:
+        """
+        고정점 목록에서 회귀(재읽기) 횟수를 계산
+        """
+        if len(fixations) < 2:
+            return 0
+            
+        regressions = 0
+        for i in range(1, len(fixations)):
+            curr = fixations[i]
+            prev = fixations[i-1]
+            
+            # y 좌표가 아래로 이동했는지 확인 (줄바꿈)
+            if curr.avg_y > prev.avg_y + 0.02:  # 임계값: 화면의 2%
+                # 다음 줄로 넘어갔을 때 x 좌표가 크게 왼쪽으로 이동했는지 확인
+                if curr.avg_x < prev.avg_x - 0.1:  # 임계값: 화면의 10%
+                    regressions += 1
+            # 같은 줄에서 왼쪽으로 이동한 경우
+            elif curr.avg_x < prev.avg_x - 0.02:  # 임계값: 화면의 2%
+                # y 좌표가 크게 변하지 않았는지 확인 (실제로 재읽기인지 확인)
+                if abs(curr.avg_y - prev.avg_y) < 0.02:  # 임계값: 화면의 2%
+                    regressions += 1
+                    
+        return regressions
 
 # 전역 서비스 인스턴스
 eyetrack_service = EyeTrackingService()

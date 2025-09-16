@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS consultations (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 읽기 분석 결과 테이블
+-- 읽기 분석 결과 테이블 (시선추적 데이터 포함)
 CREATE TABLE IF NOT EXISTS reading_analysis (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     consultation_id UUID REFERENCES consultations(id),
@@ -106,7 +106,13 @@ CREATE TABLE IF NOT EXISTS reading_analysis (
     difficulty_score DECIMAL(3,2),
     confusion_probability DECIMAL(3,2),
     comprehension_level VARCHAR(10),
+
+    -- 시선추적 관련 데이터 (JSONB로 저장)
     gaze_data JSONB,
+    fixations JSONB,
+    text_elements JSONB,
+    reading_metrics JSONB,
+
     analysis_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

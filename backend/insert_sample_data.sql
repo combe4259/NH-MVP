@@ -38,8 +38,8 @@ SELECT
     'active'
 FROM customers c;
 
--- 3. 읽기 분석 데이터 삽입 (JSON 문자열을 한 줄로 수정)
-INSERT INTO reading_analysis (consultation_id, customer_id, section_name, section_text, difficulty_score, confusion_probability, comprehension_level, gaze_data)
+-- 3. 읽기 분석 데이터 삽입 (시선추적 데이터 포함)
+INSERT INTO reading_analysis (consultation_id, customer_id, section_name, section_text, difficulty_score, confusion_probability, comprehension_level, gaze_data, fixations, text_elements, reading_metrics)
 SELECT
     cons.id,
     cons.customer_id,
@@ -69,10 +69,28 @@ SELECT
         WHEN cust.name = '박정호' THEN 'low'
     END,
     CASE
-        -- ERROR FIX: Multi-line JSON strings are combined into a single line.
-        WHEN cust.name = '김민수' THEN '{"fixation_duration": 4500, "saccade_count": 12, "regression_count": 3}'::JSONB
-        WHEN cust.name = '이서연' THEN '{"fixation_duration": 2800, "saccade_count": 6, "regression_count": 0}'::JSONB
-        WHEN cust.name = '박정호' THEN '{"fixation_duration": 8200, "saccade_count": 25, "regression_count": 8}'::JSONB
+        -- gaze_data 컬럼
+        WHEN cust.name = '김민수' THEN '{"raw_points": [{"x": 0.3, "y": 0.5, "timestamp": 1650000000}], "total_duration": 4500}'::JSONB
+        WHEN cust.name = '이서연' THEN '{"raw_points": [{"x": 0.4, "y": 0.6, "timestamp": 1650000100}], "total_duration": 2800}'::JSONB
+        WHEN cust.name = '박정호' THEN '{"raw_points": [{"x": 0.2, "y": 0.4, "timestamp": 1650000200}], "total_duration": 8200}'::JSONB
+    END,
+    CASE
+        -- fixations 컬럼
+        WHEN cust.name = '김민수' THEN '[{"x": 0.3, "y": 0.5, "duration": 300, "start_time": 1650000000, "end_time": 1650000300}]'::JSONB
+        WHEN cust.name = '이서연' THEN '[{"x": 0.4, "y": 0.6, "duration": 250, "start_time": 1650000100, "end_time": 1650000350}]'::JSONB
+        WHEN cust.name = '박정호' THEN '[{"x": 0.2, "y": 0.4, "duration": 450, "start_time": 1650000200, "end_time": 1650000650}]'::JSONB
+    END,
+    CASE
+        -- text_elements 컬럼
+        WHEN cust.name = '김민수' THEN '[{"text": "중도해지", "bbox": [0.1, 0.2, 0.3, 0.25], "is_difficult": true}]'::JSONB
+        WHEN cust.name = '이서연' THEN '[{"text": "개인정보", "bbox": [0.2, 0.3, 0.4, 0.35], "is_difficult": false}]'::JSONB
+        WHEN cust.name = '박정호' THEN '[{"text": "투자위험", "bbox": [0.1, 0.4, 0.35, 0.45], "is_difficult": true}]'::JSONB
+    END,
+    CASE
+        -- reading_metrics 컬럼
+        WHEN cust.name = '김민수' THEN '{"fixation_duration": 4500, "saccade_count": 12, "regression_count": 3, "words_per_minute": 120}'::JSONB
+        WHEN cust.name = '이서연' THEN '{"fixation_duration": 2800, "saccade_count": 6, "regression_count": 0, "words_per_minute": 180}'::JSONB
+        WHEN cust.name = '박정호' THEN '{"fixation_duration": 8200, "saccade_count": 25, "regression_count": 8, "words_per_minute": 85}'::JSONB
     END
 FROM consultations cons
 JOIN customers cust ON cons.customer_id = cust.id;

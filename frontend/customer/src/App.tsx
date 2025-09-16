@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import ReactDOM from 'react-dom';
 import axios from 'axios';
 import './App.css';
-import AIAssistant from './components/AIAssistant';
 import PDFViewer from './components/PDFViewer';
 import WebcamFaceDetection from './components/WebcamFaceDetection';
+import EyeTracker from './components/EyeTracker';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -64,6 +63,9 @@ function App() {
   // ★★★ 단순한 useState로 변경 ★★★
   const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([]);
   const [mainTerms, setMainTerms] = useState<{term: string, definition: string}[]>([]);
+  const [gazeDataBuffer, setGazeDataBuffer] = useState<any[]>([]);
+  const pdfViewerRef = useRef<HTMLDivElement>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
 
   const analyzeTextContent = useCallback(async (sectionName: string, sectionText: string) => {
@@ -127,9 +129,22 @@ function App() {
         current_section: sectionName,
         section_text: sectionText,
         reading_time: readingTime,
-        gaze_data: {
+        gaze_data: gazeDataBuffer.length > 0 ? {
+          raw_points: gazeDataBuffer.slice(-20).map(point => ({
+            x: point.screen_x || point.x || 0,
+            y: point.screen_y || point.y || 0,
+            timestamp: point.timestamp || Date.now(),
+            confidence: point.confidence || 0.8
+          })),
+          total_duration: gazeDataBuffer.reduce((sum, point) => sum + (point.duration || 200), 0),
+          fixation_count: gazeDataBuffer.length,
+          saccade_count: Math.max(1, Math.floor(gazeDataBuffer.length / 3)),
+          regression_count: Math.floor(gazeDataBuffer.length * 0.1)
+        } : {
+          // fallback 랜덤 데이터 (아이트래킹 실패 시)
+          raw_points: [{x: 0.5, y: 0.5, timestamp: Date.now(), confidence: 0.5}],
+          total_duration: Math.floor(Math.random() * 3000) + 1000,
           fixation_count: Math.floor(Math.random() * 20) + 5,
-          fixation_duration: Math.floor(Math.random() * 3000) + 1000,
           saccade_count: Math.floor(Math.random() * 15) + 5,
           regression_count: Math.floor(Math.random() * 5)
         }
@@ -346,6 +361,60 @@ function App() {
     }
   };
 
+  // 실제 시선 추적 데이터 처리
+  const handleGazeData = useCallback((gazeData: any) => {
+    // PDF 좌표 변환
+    let pdfCoordinate: { x: number; y: number; page: number } | null = null;
+    if (pdfViewerRef.current) {
+      const pdfContainer = pdfViewerRef.current;
+      const containerRect = pdfContainer.getBoundingClientRect();
+
+      // PDF 뷰어 내부인지 확인
+      if (gazeData.x >= containerRect.left && gazeData.x <= containerRect.right &&
+          gazeData.y >= containerRect.top && gazeData.y <= containerRect.bottom) {
+
+        // PDF 페이지 요소 찾기
+        const pdfPage = pdfContainer.querySelector('.rpv-core__page-layer');
+        if (pdfPage) {
+          const pageRect = pdfPage.getBoundingClientRect();
+
+          // PDF 페이지 내 상대 좌표 계산
+          const relativeX = gazeData.x - pageRect.left;
+          const relativeY = gazeData.y - pageRect.top;
+
+          // PDF 페이지 크기 대비 비율로 변환 (0-100%)
+          const percentX = (relativeX / pageRect.width) * 100;
+          const percentY = (relativeY / pageRect.height) * 100;
+
+          if (percentX >= 0 && percentX <= 100 && percentY >= 0 && percentY <= 100) {
+            pdfCoordinate = {
+              x: percentX,
+              y: percentY,
+              page: 1 // 현재는 단일 페이지 가정
+            };
+          }
+        }
+      }
+    }
+
+    // 시선 데이터를 버퍼에 추가 (PDF 좌표 포함)
+    setGazeDataBuffer(prev => [...prev, {
+      screen_x: gazeData.x,
+      screen_y: gazeData.y,
+      pdf_coordinate: pdfCoordinate,
+      timestamp: gazeData.timestamp,
+      confidence: gazeData.confidence,
+      duration: 200
+    }].slice(-100)); // 최대 100개 포인트만 유지
+
+    if (pdfCoordinate) {
+      console.log('PDF 내 시선 추적:', {
+        screen: { x: gazeData.x, y: gazeData.y },
+        pdf: pdfCoordinate
+      });
+    }
+  }, []);
+
   return (
     <div className="app-container">
       {/* 숨겨진 웹캠 (백그라운드 얼굴 분석용) */}
@@ -355,6 +424,13 @@ function App() {
           onFaceAnalysis={handleFaceAnalysis}
         />
       </div>
+
+      {/* 시선 추적 컴포넌트 */}
+      <EyeTracker
+        isTracking={isTracking}
+        onGazeData={handleGazeData}
+      />
+
 
       {/* 상단 헤더 */}
       <header className="app-header">
@@ -369,6 +445,16 @@ function App() {
           </div>
         </div>
         <div className="header-right">
+          <div className="tracking-status">
+            <span className="status-indicator camera">
+              <span className="status-dot"></span>
+              카메라 {isTracking ? '활성' : '비활성'}
+            </span>
+            <span className="status-indicator eye-track">
+              <span className="status-dot"></span>
+              시선추적 {isTracking ? '실행중' : '정지'}
+            </span>
+          </div>
           <div className="ai-status">
             <span className={`ai-indicator ${showAIHelper ? 'active' : ''}`}>
               <span className="ai-dot"></span>
@@ -404,7 +490,7 @@ function App() {
           </aside>
 
           {/* 중앙 메인 콘텐츠 */}
-          <div className="main-content">
+          <div className="main-content" ref={pdfViewerRef}>
             <div className="status-bar">
               <div className="status-item">
                 <span className="status-label">상담 상품</span>

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Optional
 import logging
+from pydantic import UUID4
 from datetime import datetime, timezone
 
 from models.schemas import StaffMonitoringResponse, AlertMessage, RealtimeStats, APIResponse
@@ -11,7 +12,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @router.get("/realtime/{consultation_id}", response_model=StaffMonitoringResponse)
-async def get_realtime_monitoring_data(consultation_id: str):
+async def get_realtime_monitoring_data(consultation_id: UUID4):
     """
     특정 상담의 실시간 모니터링 데이터 조회
     

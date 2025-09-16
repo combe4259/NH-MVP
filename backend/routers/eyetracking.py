@@ -6,7 +6,7 @@ import os
 from supabase import create_client, Client
 
 from models.schemas import ReadingData, AnalysisResponse, APIResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, UUID4
 from typing import Optional
 from models.database import get_db_connection, release_db_connection
 from services.eyetrack_service import eyetrack_service
@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 
 # 통합 분석 요청 모델
 class ComprehensiveAnalysisRequest(BaseModel):
-    consultation_id: str
-    customer_id: str
+    consultation_id: UUID4
+    customer_id: UUID4
     section_text: str
     section_name: str = ""
     reading_time: float
@@ -57,8 +57,8 @@ class ComprehensiveAnalysisResponse(BaseModel):
     face_emotions: Optional[Dict[str, float]] = None
 
 class EmotionDataRequest(BaseModel):
-    consultation_id: str
-    customer_id: str
+    consultation_id: UUID4
+    customer_id: UUID4
     raw_emotion_scores: Dict[str, float]
     timestamp: str
 
@@ -92,6 +92,12 @@ async def analyze_reading(data: ReadingData):
         # 데이터베이스에 분석 결과 저장 (Supabase API 사용)
         try:
             if supabase:
+                # 분석 결과에서 추출할 필드들
+                fixations = analysis_result.get('fixations', [])
+                text_elements = analysis_result.get('text_elements', [])
+                reading_metrics = analysis_result.get('reading_metrics', {})
+                
+                # 데이터베이스에 저장할 데이터 구성
                 insert_data = {
                     "consultation_id": data.consultation_id,
                     "customer_id": data.customer_id, 
@@ -101,17 +107,34 @@ async def analyze_reading(data: ReadingData):
                     "confusion_probability": analysis_result.get('confusion_probability', 0.5),
                     "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
                     "gaze_data": analysis_result.get('gaze_data') or data.gaze_data,
+                    "fixations": [f.dict() for f in fixations] if fixations and hasattr(fixations[0], 'dict') else fixations,
+                    "text_elements": [t.dict() for t in text_elements] if text_elements and hasattr(text_elements[0], 'dict') else text_elements,
+                    "reading_metrics": reading_metrics.dict() if hasattr(reading_metrics, 'dict') else reading_metrics,
                     "analysis_timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 
-                result = supabase.table("reading_analysis").insert(insert_data).execute()
-                logger.info(f"분석 결과 Supabase 저장 완료: {data.consultation_id}")
-            else:
-                logger.warning("Supabase 클라이언트가 초기화되지 않음")
+                # 필수 필드 검증
+                required_fields = ["consultation_id", "customer_id", "section_name", "section_text"]
+                for field in required_fields:
+                    if not insert_data.get(field):
+                        logger.warning(f"필수 필드가 누락되었습니다: {field}")
                 
-        except Exception as db_error:
-            logger.error(f"DB 저장 실패: {db_error}")
-            # DB 저장 실패해도 분석 결과는 반환
+                # Supabase에 데이터 저장
+                try:
+                    result = supabase.table("reading_analysis").insert(insert_data).execute()
+                    
+                    if hasattr(result, 'data') and result.data:
+                        logger.info(f"분석 결과 Supabase 저장 완료: {data.consultation_id}")
+                        logger.debug(f"저장된 레코드 ID: {result.data[0].get('id')}")
+                    else:
+                        logger.error(f"데이터베이스에 저장되었지만 예상치 못한 응답 형식입니다: {result}")
+                except Exception as db_error:
+                    logger.error(f"Supabase 저장 중 오류 발생: {str(db_error)}")
+            else:
+                logger.warning("Supabase 클라이언트가 초기화되지 않아 분석 결과를 저장하지 못했습니다.")
+                
+        except Exception as e:
+            logger.error(f"데이터베이스 저장 과정에서 예상치 못한 오류가 발생했습니다: {str(e)}")
         
         # 프론트엔드 친화적 응답 형식 (텍스트 분석 포함)
         return {
@@ -149,7 +172,7 @@ async def analyze_reading(data: ReadingData):
         )
 
 @router.get("/session/{consultation_id}/summary")
-async def get_session_summary(consultation_id: str):
+async def get_session_summary(consultation_id: UUID4):
     """
     특정 상담 세션의 전체 분석 요약 조회
     """
@@ -306,7 +329,7 @@ async def simulate_analysis(
         raise HTTPException(status_code=500, detail="시뮬레이션 중 오류가 발생했습니다.")
 
 @router.post("/gaze-data")
-async def receive_gaze_data(consultation_id: str, gaze_x: float, gaze_y: float, timestamp: float, confidence: float):
+async def receive_gaze_data(consultation_id: UUID4, gaze_x: float, gaze_y: float, timestamp: float, confidence: float):
     """실시간 시선 데이터 수신"""
     try:
         gaze_data = {
@@ -330,7 +353,7 @@ async def receive_gaze_data(consultation_id: str, gaze_x: float, gaze_y: float, 
         raise HTTPException(status_code=500, detail="시선 데이터 처리 중 오류가 발생했습니다.")
 
 @router.get("/ai-status/{consultation_id}")
-async def get_ai_assistant_status(consultation_id: str):
+async def get_ai_assistant_status(consultation_id: UUID4):
     """AI 도우미 활성화 상태 조회 (통합 분석 결과 기반)"""
     try:
         # TODO: AI 서버에서 통합 분석 결과를 reading_analysis 테이블에서 조회
@@ -394,7 +417,7 @@ async def get_ai_assistant_status(consultation_id: str):
         }
 
 @router.get("/reading-progress/{consultation_id}")
-async def get_reading_progress(consultation_id: str):
+async def get_reading_progress(consultation_id: UUID4):
     """읽기 진행률 조회"""
     try:
         progress = eyetrack_service.get_reading_progress(consultation_id)
@@ -448,20 +471,70 @@ async def submit_raw_emotion_data(request: EmotionDataRequest):
 
 @router.get("/health")
 async def eyetracking_health():
-    """아이트래킹 서비스 상태 확인"""
+    """
+    아이트래킹 서비스 상태 확인
+    
+    서비스의 전반적인 상태와 의존성 상태를 확인합니다.
+    """
+    health_status = {
+        "status": "healthy",
+        "service": "eyetracking-analysis",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dependencies": {
+            "database": "unknown",
+            "ai_models": "unknown",
+            "face_service": "disabled"
+        },
+        "version": "1.0.0"
+    }
+    
     try:
-        test_result = eyetrack_service.get_text_difficulty("테스트 텍스트입니다.")
-
-        return {
-            "status": "healthy",
-            "service": "eyetracking-analysis",
-            "test_analysis": "pass" if isinstance(test_result, float) else "fail",
-            "timestamp": datetime.now().isoformat()
-        }
+        # 데이터베이스 연결 테스트
+        if supabase:
+            try:
+                # 간단한 쿼리로 데이터베이스 연결 테스트
+                result = supabase.table('reading_analysis').select("id").limit(1).execute()
+                if hasattr(result, 'data'):
+                    health_status["dependencies"]["database"] = "connected"
+                else:
+                    health_status["dependencies"]["database"] = "query_failed"
+                    health_status["status"] = "degraded"
+            except Exception as db_error:
+                health_status["dependencies"]["database"] = f"error: {str(db_error)}"
+                health_status["status"] = "unhealthy"
+        else:
+            health_status["dependencies"]["database"] = "not_initialized"
+            health_status["status"] = "unhealthy"
+        
+        # AI 모델 상태 확인
+        try:
+            # AI 모델 초기화 테스트 (임시로 간단한 텍스트로 테스트)
+            test_text = "서비스 상태 확인을 위한 테스트 문장입니다."
+            difficulty = await eyetrack_service.get_text_difficulty_from_ai(test_text)
+            if isinstance(difficulty, float) and 0 <= difficulty <= 1:
+                health_status["dependencies"]["ai_models"] = "available"
+            else:
+                health_status["dependencies"]["ai_models"] = "unexpected_response"
+                health_status["status"] = "degraded"
+        except Exception as ai_error:
+            health_status["dependencies"]["ai_models"] = f"error: {str(ai_error)}"
+            health_status["status"] = "degraded"
+        
+        # 얼굴 인식 서비스 상태 확인 (선택적)
+        if FACE_SERVICE_AVAILABLE:
+            try:
+                # 간단한 얼굴 서비스 상태 확인
+                face_status = face_service.get_status()
+                health_status["dependencies"]["face_service"] = "available" if face_status.get("status") == "ready" else "not_ready"
+            except Exception as face_error:
+                health_status["dependencies"]["face_service"] = f"error: {str(face_error)}"
+        
+        return health_status
+        
     except Exception as e:
-        return {
+        health_status.update({
             "status": "unhealthy",
-            "service": "eyetracking-analysis",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
+            "error": f"Health check failed: {str(e)}",
+            "dependencies": health_status.get("dependencies", {})
+        })
+        return health_status

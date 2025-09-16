@@ -11,16 +11,7 @@
 
 /* --- 메인 컨테이너 --- */
 .eye-tracker-container {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 10000;
-  background: var(--nh-white);
-  border-radius: 12px;
-  padding: 1.5rem;
-  width: 280px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  font-family: 'Noto Sans KR', sans-serif;
+  display: none; /* 고객용 화면에서는 숨김 */
 }
 
 /* --- 활성 추적 UI --- */

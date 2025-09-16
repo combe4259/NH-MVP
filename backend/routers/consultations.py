@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
 import logging
+from pydantic import UUID4
 import json
 import uuid
 from datetime import datetime, timezone
@@ -60,7 +61,7 @@ async def create_consultation(consultation: ConsultationCreate):
         raise HTTPException(status_code=500, detail=f"상담 생성 중 오류 발생: {str(e)}")
 
 @router.get("/{consultation_id}", response_model=ConsultationResponse)
-async def get_consultation(consultation_id: str):
+async def get_consultation(consultation_id: UUID4):
     """상담 정보 조회"""
     try:
         conn = await get_db_connection()
@@ -96,7 +97,7 @@ async def get_consultation(consultation_id: str):
         raise HTTPException(status_code=500, detail="상담 조회 중 오류가 발생했습니다.")
 
 @router.get("/{consultation_id}/report", response_model=ConsultationReportResponse)
-async def get_consultation_report(consultation_id: str):
+async def get_consultation_report(consultation_id: UUID4):
     """
     상담 완료 후 리포트 생성
     """
@@ -194,7 +195,7 @@ async def get_consultation_report(consultation_id: str):
         raise HTTPException(status_code=500, detail="리포트 생성 중 오류가 발생했습니다.")
 
 @router.put("/{consultation_id}/status")
-async def update_consultation_status(consultation_id: str, status: str, phase: Optional[str] = None):
+async def update_consultation_status(consultation_id: UUID4, status: str, phase: Optional[str] = None):
     """상담 상태 업데이트"""
     try:
         valid_statuses = ["active", "paused", "completed", "cancelled"]
@@ -350,7 +351,7 @@ async def create_customer(customer: CustomerCreate):
         raise HTTPException(status_code=500, detail="고객 생성 중 오류가 발생했습니다.")
 
 @router.get("/customers/{customer_id}", response_model=CustomerResponse)
-async def get_customer(customer_id: str):
+async def get_customer(customer_id: UUID4):
     """고객 정보 조회"""
     try:
         conn = await get_db_connection()
