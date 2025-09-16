@@ -98,3 +98,4 @@ dmypy.json
 /face/model_cache
 /face/face-comprehension
 /face/model-cache
+/backend/model_cache

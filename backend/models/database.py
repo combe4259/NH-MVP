@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS consultations (
     start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP WITH TIME ZONE,
     status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    detailed_info JSONB
 );
 
 -- 읽기 분석 결과 테이블 (시선추적 데이터 포함)
