@@ -1,7 +1,6 @@
 import sys
 import os
 import asyncio
-from datetime import datetime, timezone
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -27,13 +26,9 @@ logger = logging.getLogger(__name__)
 # Add parent directory to path to import text_simplifier
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-try:
-    from text_simplifier_krfinbert_kogpt2 import FinancialTextSimplifier
-    TEXT_SIMPLIFIER_AVAILABLE = True
-except ImportError as e:
-    logger.warning("Warning: text_simplifier 모듈을 찾을 수 없습니다. %s", str(e))
-    TEXT_SIMPLIFIER_AVAILABLE = False
-    FinancialTextSimplifier = None
+# text_simplifier_krfinbert_kogpt2는 사용하지 않음 (ai_model_service의 fin_simplifier 사용)
+TEXT_SIMPLIFIER_AVAILABLE = False
+FinancialTextSimplifier = None
 
 # eyetrack 모듈 import (기존 코드 재사용)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
@@ -87,21 +82,8 @@ class EyeTrackingService:
         self.max_fixation_duration = timedelta(seconds=1.0)  # 최대 고정 시간
         self.gaze_history_window = timedelta(seconds=5.0)  # 시선 이력 유지 시간
         
-        # text simplifier 실행
-        try:
-            if TEXT_SIMPLIFIER_AVAILABLE and FinancialTextSimplifier:
-                self.text_simplifier = FinancialTextSimplifier()
-                # 모델 실행
-                model_path = "./financial_simplifier_model"
-                if os.path.exists(model_path):
-                    self.text_simplifier.load_model(model_path)
-                logger.info("FinancialTextSimplifier 실행 완료")
-            else:
-                logger.info("FinancialTextSimplifier 사용 불가 - 의존성 부족")
-                self.text_simplifier = None
-        except Exception as e:
-            logger.error(f"FinancialTextSimplifier 실행 실패: {str(e)}")
-            self.text_simplifier = None
+        # AI 모델 서비스 사용 (ai_model_service의 fin_simplifier)
+        self.text_simplifier = None  # ai_model_service를 직접 사용
     
     def get_text_difficulty(self, section_text: str) -> float:
         """한국어 금융 약관 텍스트의 난이도 분석 (기존 로직 개선)"""
@@ -269,33 +251,7 @@ class EyeTrackingService:
         )
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
-                                    section_text: str, reading_time: float,
-                                    gaze_data: Optional[Dict] = None,
-                                    face_frame: Optional[np.ndarray] = None) -> Dict:
-        """읽기 세션 분석 (메인 API 함수) - AI 모델 우선 사용"""
-        
-        try:
-            # AI 모델 사용 가능시 AI 분석 우선
-            if AI_MODEL_AVAILABLE and ai_model_manager:
-                ai_result = await ai_model_manager.analyze_text(section_text)
-                difficulty_score = ai_result.get('difficulty_score', 0.5)
-                ai_explanation = ai_result.get('ai_explanation', '')
-                confused_sentences = [s.get('sentence_id', 0) for s in ai_result.get('confused_sections', [])]
-                
-                # 얼굴 혼란도 분석 (face_frame이 있을 때만)
-                face_confusion = {"confused": False, "probability": 0.0}
-                if face_frame is not None and hasattr(ai_model_manager, 'hf_models'):
-                    if ai_model_manager.hf_models:
-                        try:
-                            face_confusion = await ai_model_manager.hf_models.analyze_confusion_from_face(face_frame)
-                        except Exception as e:
-                            print(f"얼굴 분석 오류: {e}")
-            else:
-                # Fallback: 기존 로직 사용
-                difficulty_score = self.get_text_difficulty(section_text)
-                confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
-                ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
-                face_confusion = {"confused": False, "probability": 0.0}
+                                    section_text: str, reading_time: float, 
                                     gaze_data: Optional[Dict] = None) -> Dict[str, Any]:
         """읽기 세션 분석 (메인 API 함수)"""
         
@@ -329,10 +285,7 @@ class EyeTrackingService:
             recommendations = self._generate_recommendations(
                 confusion_probability, difficulty_score, reading_time
             )
-
-            # 7. 텍스트 분석 (문장 + 단어 동시 분석)
-            analysis_data = {}
-            if self.hybrid_analyzer:
+            
             # 7. 세션 데이터 업데이트
             if consultation_id not in self.session_data:
                 self.session_data[consultation_id] = {
@@ -371,38 +324,6 @@ class EyeTrackingService:
                     "underlined_sections": [],
                     "detailed_explanations": {}
                 }
-            
-            # 8. 세션 데이터 업데이트
-            if consultation_id not in self.session_data:
-                self.session_data[consultation_id] = {
-                    'sections': [],
-                    'start_time': datetime.now(timezone.utc)
-                }
-            
-            # 세션 데이터 업데이트 (하이브리드 결과 포함)
-            section_data = {
-                'section_name': section_name,
-                'difficulty_score': difficulty_score,
-                'confusion_probability': confusion_probability,
-                'comprehension_level': comprehension_level,
-                'timestamp': datetime.now(timezone.utc)
-            }
-
-            # 텍스트 분석 결과도 세션에 저장
-            if analysis_data:
-                section_data.update({
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-                # 세션 레벨에서도 업데이트
-                self.session_data[consultation_id].update({
-                    'current_section': section_name,
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-            self.session_data[consultation_id]['sections'].append(section_data)
             
             result = {
                 "status": status,

@@ -82,6 +82,8 @@ class HuggingFaceModels(AIModelInterface):
     def __init__(self):
         self.difficulty_model = None
         self.difficulty_tokenizer = None
+        self.simplifier_model = None
+        self.simplifier_tokenizer = None
         self.confusion_model = None
         self.confusion_tracker = None
         self._load_models()
@@ -95,6 +97,13 @@ class HuggingFaceModels(AIModelInterface):
             self.difficulty_model = AutoModelForSequenceClassification.from_pretrained("combe4259/difficulty_klue")
             self.difficulty_model.eval()
             logger.info("KLUE-BERT 난이도 분석 모델 로드 완료")
+            
+            # 텍스트 간소화 모델
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+            self.simplifier_tokenizer = AutoTokenizer.from_pretrained("combe4259/fin_simplifier")
+            self.simplifier_model = AutoModelForSeq2SeqLM.from_pretrained("combe4259/fin_simplifier")
+            self.simplifier_model.eval()
+            logger.info("금융 텍스트 간소화 모델 로드 완료")
             
             # 얼굴 혼란도 감지 모델
             sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'face'))
@@ -157,14 +166,60 @@ class HuggingFaceModels(AIModelInterface):
             logger.error(f"얼굴 혼란도 분석 실패: {e}")
             return {"confused": False, "probability": 0.0}
     
+    async def simplify_text(self, text: str) -> str:
+        """금융 텍스트를 쉬운 말로 변환"""
+        if not self.simplifier_model or not self.simplifier_tokenizer:
+            return text
+        
+        try:
+            import torch
+            # 입력 텍스트 토큰화
+            inputs = self.simplifier_tokenizer(
+                text,
+                return_tensors="pt",
+                max_length=512,
+                truncation=True,
+                padding=True
+            )
+            
+            # 간소화된 텍스트 생성
+            with torch.no_grad():
+                outputs = self.simplifier_model.generate(
+                    **inputs,
+                    max_length=256,
+                    num_beams=5,
+                    temperature=0.8,
+                    do_sample=True,
+                    top_p=0.95
+                )
+            
+            # 디코딩
+            simplified_text = self.simplifier_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            return simplified_text
+            
+        except Exception as e:
+            logger.error(f"텍스트 간소화 실패: {e}")
+            return text
+    
     async def generate_explanation(self, text: str, difficulty_score: float) -> str:
-        """AI 설명 생성"""
-        if difficulty_score > 0.7:
-            return f"이 부분은 어려운 금융 용어가 포함되어 있습니다. 쉽게 설명해드릴게요."
-        elif difficulty_score > 0.4:
-            return f"중간 정도 난이도의 텍스트입니다. 천천히 읽어보세요."
-        else:
-            return f"이해하기 쉬운 내용입니다."
+        """AI 설명 생성 - 간소화 모델 활용"""
+        try:
+            # 난이도에 따라 간소화 수행
+            if difficulty_score > 0.6:
+                simplified = await self.simplify_text(text)
+                return f"**쉽게 설명해드릴게요:**\n{simplified}"
+            elif difficulty_score > 0.4:
+                return f"중간 정도 난이도의 텍스트입니다. 천천히 읽어보세요."
+            else:
+                return f"이해하기 쉬운 내용입니다."
+        except:
+            # 폴백
+            if difficulty_score > 0.7:
+                return f"이 부분은 어려운 금융 용어가 포함되어 있습니다. 쉽게 설명해드릴게요."
+            elif difficulty_score > 0.4:
+                return f"중간 정도 난이도의 텍스트입니다. 천천히 읽어보세요."
+            else:
+                return f"이해하기 쉬운 내용입니다."
     
     async def identify_confused_sections(self, text: str) -> List[Dict]:
         """혼란스러운 섹션 식별"""
