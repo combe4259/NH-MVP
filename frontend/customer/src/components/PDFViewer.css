@@ -1,0 +1,142 @@
+/* PDF 뷰어 컨테이너 */
+.pdf-viewer-container {
+  border: 1px solid #ccc;
+  height: 750px;
+  width: 100%;
+  position: relative; /* 팝업 위치의 기준점 */
+  display: flex;      /* PDF 뷰어 내부 레이아웃 flex로 처리 */
+}
+
+.pdf-viewer-wrapper {
+  flex: 1; /* 부모 flex 컨테이너의 공간을 모두 차지. */
+  overflow: hidden; /* 오버플로우를 방지 */
+}
+
+/* 커스텀 하이라이트 스타일 (밑줄) */
+.custom-highlight-underline {
+  /* search 플러그인의 기본 노란색 배경 스타일을 제거. */
+  background-color: transparent !important;
+  border-bottom: 2px solid rgba(0, 100, 0, 0.8); /* 밑줄 색상 진한 초록색 */
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.custom-highlight-underline:hover {
+  /* 호버 시 더 진하고 두꺼운 밑줄로 변경 */
+  border-bottom: 3px solid rgba(0, 100, 0, 1);
+}
+
+/* 어려운 문장 밑줄 스타일 */
+.sentence-underline {
+  background-color: transparent !important;
+  border-bottom: 3px solid #ffc107 !important; /* 노란색 밑줄 */
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out;
+  position: absolute !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+}
+
+.sentence-underline:hover {
+  border-bottom: 4px solid #ffc107 !important;
+  background-color: rgba(255, 193, 7, 0.1) !important;
+}
+
+/* 팝업 스타일 */
+.pdf-popup {
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: 300px;
+  font-family: sans-serif;
+  font-size: 14px;
+  z-index: 1000; /* 뷰어 위로 표시 */
+}
+
+.popup-content {
+  padding: 0;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #eee;
+  background-color: #f7f7f7;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.popup-header h4 {
+  margin: 0;
+  font-weight: 600;
+  color: #333;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #888;
+  padding: 0;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #000;
+}
+
+.popup-body {
+  padding: 16px;
+  line-height: 1.6;
+  color: #555;
+}
+
+.popup-body p {
+  margin: 0;
+}
+
+/* 좌표 기반 어려운 문장 스타일 */
+.coordinate-based-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.coordinate-sentence-marker {
+  pointer-events: all;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  line-height: 1.4;
+  border-bottom: 3px solid #ffc107 !important;
+  background: transparent !important;
+}
+
+.coordinate-sentence-marker:hover {
+  border-bottom: 4px solid #ffc107 !important;
+  background: rgba(255, 193, 7, 0.1) !important;
+}
+
+/* 팝업 개선 */
+.pdf-popup {
+  min-width: 250px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  border: 1px solid #e1e5e9;
+}
+
+.popup-content .original-text {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.popup-content .simplified-text strong {
+  color: #28a745;
+}

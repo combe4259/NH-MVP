@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, Menu, Home, ArrowLeft } from 'lucide-react';
 import Overview from './Overview';
+import { reportAPI, ConsultationSummary } from './api/backend';
 
 interface ConsultationDetail {
   id: string;
@@ -22,49 +23,75 @@ interface ConsultingProps {
 
 const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
   const [selectedConsultation, setSelectedConsultation] = useState<string | null>(null);
-  const [consultationDetails] = useState<ConsultationDetail[]>([
-    {
-      id: '1',
-      title: '은퇴설계 연금펀드 상담',
-      location: '미사강변지점',
-      date: '2025.09.08',
-      category: '예상 수익',
-      expectedAmount: '557만원 (5년)',
-      nextAction: '다음 할 일: 가족 관계 증명서 준비하기',
-      status: 'active',
-      statusText: '액션필요'
-    },
-    {
-      id: '2',
-      title: '주택청약 적금 상담',
-      location: '미사강변지점',
-      date: '2025.09.08',
-      category: '가입 금액',
-      possibleAmount: '월 30만원',
-      nextAction: '다음 할 일: 가족 관계 증명서 준비하기',
-      status: 'completed',
-      statusText: '완료'
-    },
-    {
-      id: '3',
-      title: '정기예금 상담',
-      location: '미사강변지점',
-      date: '2025.09.08',
-      category: '만기 예상액',
-      possibleAmount: '1,080만원 (1년)',
-      maturityDate: '만기일: 2026년 9월 1일',
-      nextAction: '',
-      status: 'completed',
-      statusText: '완료'
-    }
-  ]);
+  const [consultationDetails, setConsultationDetails] = useState<ConsultationDetail[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 백엔드에서 상담 데이터 불러오기
+  useEffect(() => {
+    const fetchConsultations = async () => {
+      try {
+        setIsLoading(true);
+        const response = await reportAPI.getCompletedConsultations(10);
+
+        // 백엔드 데이터를 UI 형식으로 변환
+        const formattedConsultations: ConsultationDetail[] = response.consultations.map((consultation, index) => ({
+          id: consultation.consultation_id,
+          title: `${consultation.product_type} 상담`,
+          location: 'NH 디지털 상담',
+          date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
+          category: '상담 완료',
+          expectedAmount: consultation.status === 'completed' ? '상담 완료' : '진행 중',
+          nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
+          status: consultation.status === 'completed' ? 'completed' : 'active',
+          statusText: consultation.status === 'completed' ? '완료' : '액션필요'
+        }));
+
+        setConsultationDetails(formattedConsultations);
+      } catch (error) {
+        console.error('상담 목록 조회 실패:', error);
+        setError('상담 목록을 불러올 수 없습니다.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConsultations();
+  }, []);
 
   if (selectedConsultation) {
     return (
-      <Overview 
-        consultationId={selectedConsultation} 
-        onBack={() => setSelectedConsultation(null)} 
+      <Overview
+        consultationId={selectedConsultation}
+        onBack={() => setSelectedConsultation(null)}
       />
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="max-w-sm mx-auto bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">상담 내역을 불러오는 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-sm mx-auto bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          >
+            돌아가기
+          </button>
+        </div>
+      </div>
     );
   }
 

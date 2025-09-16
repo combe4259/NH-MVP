@@ -1,7 +1,94 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime, timedelta
 import uuid
+
+# ===== 시선추적 관련 모델들 =====
+
+class GazePoint(BaseModel):
+    """Raw gaze point data from eye tracker"""
+    x: float = Field(..., ge=0, le=1, description="Normalized x-coordinate (0-1)")
+    y: float = Field(..., ge=0, le=1, description="Normalized y-coordinate (0-1)")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Timestamp when the gaze point was captured"
+    )
+    confidence: float = Field(
+        default=1.0,
+        ge=0,
+        le=1,
+        description="Confidence score (0-1) of the gaze point detection"
+    )
+
+class FixationData(BaseModel):
+    """Processed fixation data"""
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        description="Unique identifier for the fixation"
+    )
+    start_timestamp: datetime = Field(..., description="When the fixation started")
+    end_timestamp: datetime = Field(..., description="When the fixation ended")
+    duration: float = Field(..., description="Duration of the fixation in milliseconds")
+    avg_x: float = Field(..., ge=0, le=1, description="Average x position (0-1)")
+    avg_y: float = Field(..., ge=0, le=1, description="Average y position (0-1)")
+    dispersion: float = Field(..., ge=0, description="Dispersion of gaze points")
+
+class SaccadeData(BaseModel):
+    """Saccade data between fixations"""
+    start_fixation_id: str
+    end_fixation_id: str
+    duration: float  # in milliseconds
+    amplitude: float  # Distance between fixations
+    velocity: float   # Average velocity (pixels/ms)
+
+class TextElement(BaseModel):
+    """Text element with bounding box"""
+    text: str
+    bbox: Tuple[float, float, float, float]  # x1, y1, x2, y2
+    line_number: int
+    word_index: Optional[int] = None
+
+class ReadingMetrics(BaseModel):
+    """Reading behavior metrics"""
+    timestamp: float = Field(default_factory=lambda: datetime.now().timestamp() * 1000)
+    avg_fixation_duration: float  # in milliseconds
+    fixations_per_minute: float
+    regression_count: int
+    words_per_minute: Optional[float] = None
+    difficult_terms: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Dictionary of terms and total fixation time (ms)"
+    )
+
+class ReadingDataRequest(BaseModel):
+    """시선추적 분석 요청 데이터 (프론트엔드 → 백엔드)"""
+    current_section: str = Field(..., description="현재 읽고 있는 섹션명")
+    customer_id: str = Field(..., description="고객 ID")
+    consultation_id: str = Field(..., description="상담 세션 ID")
+    section_text: str = Field(..., description="섹션 텍스트 내용")
+    gaze_data: List[GazePoint] = Field(
+        default_factory=list,
+        description="Raw gaze point data from eye tracker"
+    )
+    text_elements: List[TextElement] = Field(
+        default_factory=list,
+        description="Text elements with their bounding boxes in the document"
+    )
+
+class ReadingDataResponse(ReadingDataRequest):
+    """시선추적 분석 응답 데이터 (백엔드 → 프론트엔드)"""
+    fixations: List[FixationData] = Field(
+        default_factory=list,
+        description="Processed fixation data"
+    )
+    reading_metrics: ReadingMetrics = Field(
+        default_factory=ReadingMetrics,
+        description="Calculated reading metrics"
+    )
+    processed_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="When the analysis was performed"
+    )
 
 # 요청 모델들
 class ReadingData(BaseModel):
@@ -60,9 +147,10 @@ class ConsultationReportResponse(BaseModel):
     overall_difficulty: float = Field(..., description="전체 평균 난이도")
     confused_sections: List[str] = Field(..., description="어려워했던 섹션들")
     total_sections_analyzed: int = Field(..., description="분석된 총 섹션 수")
-    comprehension_summary: Dict[str, int] = Field(..., description="이해도별 섹션 수")
+    comprehension_summary: Dict[str, int] = Field(..., description="이해도별 섹션 수 {'high': 3, 'medium': 2, 'low': 1} 형식")
     recommendations: List[str] = Field(..., description="향후 권장사항")
     detailed_analysis: Optional[List[Dict[str, Any]]] = Field(None, description="상세 분석 결과")
+    detailed_info: Optional[Dict[str, Any]] = Field(None, description="상담 상세 정보 (UI용)")
 
 class ConsultationResponse(BaseModel):
     """상담 생성/조회 응답"""
@@ -105,16 +193,22 @@ class ServiceInfo(BaseModel):
 
 # 데이터베이스 관련 모델들
 class ReadingAnalysisDB(BaseModel):
-    """읽기 분석 DB 저장용 모델"""
+    """읽기 분석 DB 저장용 모델 (시선추적 데이터 포함)"""
     id: Optional[str] = None
     consultation_id: str
     customer_id: str
     section_name: str
-    section_text: str
-    difficulty_score: float
-    confusion_probability: float
-    comprehension_level: str
+    section_text: Optional[str] = None
+    difficulty_score: Optional[float] = None
+    confusion_probability: Optional[float] = None
+    comprehension_level: Optional[str] = None
+
+    # 시선추적 관련 데이터
     gaze_data: Optional[Dict[str, Any]] = None
+    fixations: Optional[List[Dict[str, Any]]] = None
+    text_elements: Optional[List[Dict[str, Any]]] = None
+    reading_metrics: Optional[Dict[str, Any]] = None
+
     analysis_timestamp: Optional[datetime] = None
     created_at: Optional[datetime] = None
 

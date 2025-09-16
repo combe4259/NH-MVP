@@ -2,6 +2,10 @@ import asyncpg
 import os
 from typing import Optional
 import logging
+from dotenv import load_dotenv
+
+# 환경변수 로드
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +27,23 @@ class DatabaseManager:
     async def create_pool(self):
         """데이터베이스 연결 풀 생성"""
         try:
+            # 직접 연결 URL 사용
+            connection_url = f"postgresql://{DATABASE_CONFIG['user']}:{DATABASE_CONFIG['password']}@{DATABASE_CONFIG['host']}:{DATABASE_CONFIG['port']}/{DATABASE_CONFIG['database']}?sslmode=require"
+
             self.pool = await asyncpg.create_pool(
-                host=DATABASE_CONFIG["host"],
-                port=DATABASE_CONFIG["port"],
-                user=DATABASE_CONFIG["user"],
-                password=DATABASE_CONFIG["password"],
-                database=DATABASE_CONFIG["database"],
+                connection_url,
                 min_size=1,
-                max_size=10
+                max_size=10,
+                command_timeout=60,
+                statement_cache_size=0  # Fix for pgbouncer transaction pooler
             )
             logger.info("데이터베이스 연결 풀이 생성되었습니다.")
         except Exception as e:
+            import traceback
             logger.error(f"데이터베이스 연결 실패: {e}")
+            logger.error(f"상세 오류: {traceback.format_exc()}")
+            print(f"데이터베이스 연결 실패: {e}")
+            print(f"상세 오류: {traceback.format_exc()}")
             raise
     
     async def close_pool(self):
@@ -87,7 +96,7 @@ CREATE TABLE IF NOT EXISTS consultations (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 읽기 분석 결과 테이블
+-- 읽기 분석 결과 테이블 (시선추적 데이터 포함)
 CREATE TABLE IF NOT EXISTS reading_analysis (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     consultation_id UUID REFERENCES consultations(id),
@@ -97,7 +106,13 @@ CREATE TABLE IF NOT EXISTS reading_analysis (
     difficulty_score DECIMAL(3,2),
     confusion_probability DECIMAL(3,2),
     comprehension_level VARCHAR(10),
+
+    -- 시선추적 관련 데이터 (JSONB로 저장)
     gaze_data JSONB,
+    fixations JSONB,
+    text_elements JSONB,
+    reading_metrics JSONB,
+
     analysis_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -137,8 +152,13 @@ async def init_database():
 # 앱 시작시 데이터베이스 초기화
 async def startup_database():
     """FastAPI 앱 시작시 실행"""
-    await db_manager.create_pool()
-    await init_database()
+    try:
+        await db_manager.create_pool()
+        await init_database()
+        print("데이터베이스 연결 및 초기화 완료")
+    except Exception as e:
+        print(f"데이터베이스 연결 실패, 더미 모드로 실행: {e}")
+        # 데이터베이스 없이 실행
 
 async def shutdown_database():
     """FastAPI 앱 종료시 실행"""

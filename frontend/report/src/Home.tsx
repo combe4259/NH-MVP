@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, Bell, Menu as MenuIcon, MoreVertical } from 'lucide-react';
 import Menu from './Menu';
 import Consulting from './Consulting';
 import Overview from './Overview';
+import { reportAPI, ConsultationSummary } from './api/backend';
 
 interface ConsultationRecord {
   id: string;
@@ -18,32 +19,75 @@ const Home: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showConsultationCenter, setShowConsultationCenter] = useState(false);
   const [selectedConsultationId, setSelectedConsultationId] = useState<string | null>(null);
-  
-  const [consultations] = useState<ConsultationRecord[]>([
-    {
-      id: '1',
-      type: '🍎',
-      title: '은퇴설계 컨설팅 상담',
-      date: '2025.09.08',
-      location: '미사강변지점',
-      nextAction: '다음 할 일: 가족 관계 증명서 준비하기'
-    },
-    {
-      id: '2',
-      type: '💼',
-      title: '주택담보대출 문의',
-      date: '2025.09.06',
-      location: '온라인상담',
-      nextAction: '다음 할 일: 소득증빙서류 제출하기'
-    },
-    {
-      id: '3',
-      type: '📈',
-      title: '펀드 투자상품 상담',
-      date: '2025.09.03',
-      location: '강남지점'
+
+  const [consultations, setConsultations] = useState<ConsultationRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [backendConnected, setBackendConnected] = useState(false);
+
+  // 백엔드에서 상담 데이터 불러오기
+  useEffect(() => {
+    const fetchConsultations = async () => {
+      try {
+        setIsLoading(true);
+
+        // 백엔드 연결 확인
+        await reportAPI.healthCheck();
+        setBackendConnected(true);
+
+        // 완료된 상담 목록 가져오기
+        const response = await reportAPI.getCompletedConsultations(10);
+
+        // 백엔드 데이터를 UI 형식으로 변환
+        const formattedConsultations: ConsultationRecord[] = response.consultations.map((consultation, index) => ({
+          id: consultation.consultation_id,
+          type: getProductIcon(consultation.product_type),
+          title: `${consultation.product_type} 상담`,
+          date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
+          location: 'NH 디지털 상담',
+          nextAction: consultation.status === 'completed' ? '상담 완료' : '진행 중'
+        }));
+
+        setConsultations(formattedConsultations);
+
+      } catch (error) {
+        console.error('백엔드 연결 실패:', error);
+        setBackendConnected(false);
+
+        // 백엔드 연결 실패시 더미 데이터 사용
+        setConsultations([
+          {
+            id: 'demo-1',
+            type: '🏦',
+            title: '정기예금 상담 (데모)',
+            date: '2024.09.14',
+            location: 'NH 디지털 상담',
+            nextAction: '백엔드 연결 중...'
+          }
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConsultations();
+  }, []);
+
+  // 상품 타입에 따른 아이콘 반환
+  const getProductIcon = (productType: string): string => {
+    switch (productType.toLowerCase()) {
+      case '정기예금':
+      case 'deposit':
+        return '🏦';
+      case '펀드':
+      case 'fund':
+        return '📈';
+      case '대출':
+      case 'loan':
+        return '💼';
+      default:
+        return '📄';
     }
-  ]);
+  };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollPosition(e.currentTarget.scrollTop);
