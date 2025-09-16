@@ -63,6 +63,7 @@ class ConsultationReportResponse(BaseModel):
     comprehension_summary: Dict[str, int] = Field(..., description="이해도별 섹션 수")
     recommendations: List[str] = Field(..., description="향후 권장사항")
     detailed_analysis: Optional[List[Dict[str, Any]]] = Field(None, description="상세 분석 결과")
+    detailed_info: Optional[Dict[str, Any]] = Field(None, description="상담 상세 정보 (UI용)")
 
 class ConsultationResponse(BaseModel):
     """상담 생성/조회 응답"""

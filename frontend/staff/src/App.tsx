@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -132,13 +132,13 @@ function App() {
   
 
   // 백엔드에서 데이터 가져오기
-  const fetchCustomersData = async () => {
+  const fetchCustomersData = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/staff/dashboard/overview`);
       const consultations = response.data.active_consultations;
 
       // 백엔드 데이터를 프론트엔드 형식에 맞게 변환
-      const updatedCustomers = customers.map(customer => {
+      setCustomers(currentCustomers => currentCustomers.map(customer => {
         const backendData = consultations.find((c: any) => c.customer_name === customer.name);
         if (backendData) {
           return {
@@ -151,9 +151,7 @@ function App() {
           };
         }
         return customer;
-      });
-
-      setCustomers(updatedCustomers);
+      }));
     } catch (error) {
       console.error('백엔드 데이터 가져오기 실패:', error);
       // 실패시 기존 랜덤 업데이트 로직 실행
@@ -164,7 +162,7 @@ function App() {
         attentionScore: Math.max(0, Math.min(100, customer.attentionScore + (Math.random() - 0.5) * 8))
       })));
     }
-  };
+  }, []);
 
   useEffect(() => {
     // 초기 데이터 로드

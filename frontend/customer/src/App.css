@@ -359,6 +359,8 @@ body {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   overflow: hidden;
+  position: relative; /* 밑줄 위치의 기준점 설정 */
+  z-index: 1; /* PDF 레이어의 기준 z-index */
 }
 
 /* Sidebar Right */

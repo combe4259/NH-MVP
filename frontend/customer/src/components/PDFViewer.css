@@ -82,3 +82,45 @@
 .popup-body p {
   margin: 0;
 }
+
+/* 좌표 기반 어려운 문장 스타일 */
+.coordinate-based-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.coordinate-sentence-marker {
+  pointer-events: all;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  line-height: 1.4;
+  border-bottom: 3px solid #ffc107 !important;
+  background: transparent !important;
+}
+
+.coordinate-sentence-marker:hover {
+  border-bottom: 4px solid #ffc107 !important;
+  background: rgba(255, 193, 7, 0.1) !important;
+}
+
+/* 팝업 개선 */
+.pdf-popup {
+  min-width: 250px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  border: 1px solid #e1e5e9;
+}
+
+.popup-content .original-text {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.popup-content .simplified-text strong {
+  color: #28a745;
+}

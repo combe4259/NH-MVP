@@ -4,79 +4,108 @@ from typing import Dict, List, Optional, Tuple
 import asyncio
 from datetime import datetime, timezone
 
-# eyetracking 모듈 import
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+# eyetrack 모듈 import (기존 코드 재사용)
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
 
 try:
-    from eyetrack.gaze_tracker import EyeGazeTracker, GazeData
-    from eyetrack.comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics
-    from eyetrack.hybrid_analyzer import HybridTextAnalyzer, HybridAnalysisResult
-    EYETRACK_AVAILABLE = True
-    print("Eyetrack 모듈들이 성공적으로 로드되었습니다")
-except ImportError as e:
-    print(f"Warning: eyetrack 모듈을 찾을 수 없습니다: {e}")
-    EyeGazeTracker = None
-    GazeData = None
-    ComprehensionAnalyzer = None
-    HybridTextAnalyzer = None
-    HybridAnalysisResult = None
-    EYETRACK_AVAILABLE = False
-
-# AI 모델 매니저 import
-try:
-    from .ai_model_service import ai_model_manager
-    AI_MODEL_AVAILABLE = True
+    from comprehension_analyzer import ComprehensionAnalyzer, ComprehensionMetrics, RealTimeComprehensionMonitor
+    from hybrid_analyzer import hybrid_analyzer
 except ImportError:
-    print("Warning: AI 모델 서비스를 찾을 수 없습니다.")
-    ai_model_manager = None
-    AI_MODEL_AVAILABLE = False
+    print("Warning: eyetrack 모듈을 찾을 수 없습니다. 시뮬레이션 모드로 동작합니다.")
+    ComprehensionAnalyzer = None
+    ComprehensionMetrics = None
+    RealTimeComprehensionMonitor = None
+    hybrid_analyzer = None
 
 class EyeTrackingService:
     """기존 eyetrack 모듈을 웹 서비스로 감싸는 서비스 레이어"""
     
     def __init__(self):
         self.analyzer = ComprehensionAnalyzer() if ComprehensionAnalyzer else None
-        self.hybrid_analyzer = HybridTextAnalyzer() if HybridTextAnalyzer else None
+        self.monitor = RealTimeComprehensionMonitor() if RealTimeComprehensionMonitor else None
         self.session_data = {}  # consultation_id별 세션 데이터
     
     def get_text_difficulty(self, section_text: str) -> float:
-        """텍스트 난이도 분석 (기존 ComprehensionAnalyzer 활용 + 간단 fallback)"""
+        """한국어 금융 약관 텍스트의 난이도 분석 (기존 로직 개선)"""
         
-        # 기존 모듈 사용 (시선 데이터가 있을 때)
-        if self.analyzer:
-            # TODO: 실제 시선 데이터로 분석할 때는 이 부분 사용
-            # 지금은 텍스트만으로 간단 분석
-            pass
-        
-        # 간단한 키워드 기반 분석 (AI 모델 완성 전까지 임시)
-        difficult_terms = [
-            '중도해지', '우대금리', '복리', '예금자보호', '만기자동연장',
-            '변동금리', '세액공제', '원천징수', '담보대출', '신용대출'
+        # 어려운 금융 용어들 (확장)
+        difficult_financial_terms = [
+            # 기본 금융 용어
+            '중도해지', '우대금리', '예금자보호', '만기자동연장', '복리', '단리',
+            # 세금 관련
+            '세액공제', '원천징수', '과세표준', '소득공제', '비과세',
+            # 투자 관련
+            '금융투자상품', '파생결합증권', '환매조건부채권', '신탁', '수익증권',
+            '펀드', '위험등급', '손실가능성', '원금보장', '변동성', '유동성',
+            # 대출 관련
+            '담보대출', '신용대출', '한도대출', '거치기간', '상환방식',
+            # 보험 관련
+            '보험료', '보장내용', '면책기간', '해지환급금', '만기보험금'
         ]
         
-        term_count = sum(1 for term in difficult_terms if term in section_text)
-        sentence_count = len([s for s in section_text.split('.') if s.strip()])
+        # 복잡한 법률/금융 표현들
+        complex_expressions = [
+            '~에 따라', '~을 제외하고', '~를 조건으로', '~에 한하여', '~에 관하여',
+            '단,', '다만,', '또한,', '따라서,', '그러나,', '또는', '만약',
+            '상기', '해당', '관련', '준용', '적용', '제외', '포함'
+        ]
         
-        # 간단한 난이도 계산
-        base_difficulty = min(term_count * 0.15, 0.6)
-        length_factor = min(len(section_text) / 200, 0.3)
+        # 문장 분석
+        sentences = [s.strip() for s in section_text.split('.') if s.strip()]
+        words = section_text.split()
         
-        return min(base_difficulty + length_factor, 0.9)
+        difficulty_score = 0.0
+        
+        # 1. 어려운 금융 용어 비율 (40% 가중치)
+        financial_term_count = sum(1 for word in words 
+                                  if any(term in word for term in difficult_financial_terms))
+        if words:
+            difficulty_score += (financial_term_count / len(words)) * 0.4
+        
+        # 2. 복잡한 표현 사용 빈도 (20% 가중치)
+        complex_count = sum(1 for expr in complex_expressions if expr in section_text)
+        difficulty_score += min(complex_count / 5, 0.2) * 0.2
+        
+        # 3. 문장 길이와 복잡성 (25% 가중치)
+        if sentences:
+            avg_sentence_length = sum(len(s) for s in sentences) / len(sentences)
+            long_sentence_ratio = len([s for s in sentences if len(s) > 50]) / len(sentences)
+            difficulty_score += min(avg_sentence_length / 100, 0.15) * 0.15
+            difficulty_score += long_sentence_ratio * 0.1
+        
+        # 4. 숫자와 퍼센트 포함도 (15% 가중치)
+        import re
+        numbers = re.findall(r'\d+(?:\.\d+)?%?', section_text)
+        number_density = len(numbers) / max(len(words), 1)
+        difficulty_score += min(number_density, 0.15) * 0.15
+        
+        return min(difficulty_score, 1.0)
     
     def calculate_confusion_probability(self, difficulty_score: float, reading_time: float, 
                                       expected_time: float = 30.0, section_length: int = 100) -> float:
-        """간소화된 혼란도 계산 (기존 모듈로 대체 예정)"""
+        """더 정교한 혼란도 계산"""
         
-        # 기존 모듈 사용 가능시 사용
-        if self.analyzer:
-            # TODO: ComprehensionAnalyzer의 calculate_cognitive_load 메소드 활용
-            pass
+        # 텍스트 길이에 따른 기대 시간 조정
+        adjusted_expected_time = expected_time * (section_length / 100)
+        time_ratio = reading_time / adjusted_expected_time
         
-        # 간단한 혼란도 계산 (임시)
-        time_factor = min(reading_time / expected_time, 2.0) - 1.0  # -1.0 ~ 1.0
-        time_adjustment = abs(time_factor) * 0.2  # 너무 빠르거나 느리면 혼란도 증가
+        confusion_prob = 0.0
         
-        confusion_prob = difficulty_score * 0.7 + time_adjustment * 0.3
+        # 1. 텍스트 난이도 (50% 가중치)
+        confusion_prob += difficulty_score * 0.5
+        
+        # 2. 읽기 시간 패턴 (30% 가중치)
+        if time_ratio > 2.5:  # 너무 오래 걸림
+            confusion_prob += min((time_ratio - 1) / 4, 0.3) * 0.3
+        elif time_ratio < 0.3:  # 너무 빨리 읽음 (대충 읽음)
+            confusion_prob += (0.3 - time_ratio) / 0.3 * 0.2
+        
+        # 3. 시간대별 가중치 (20% 가중치) - 오후에는 집중력 저하
+        current_hour = datetime.now().hour
+        if 14 <= current_hour <= 16:  # 오후 2-4시
+            confusion_prob += 0.1
+        elif current_hour >= 18:  # 저녁 6시 이후
+            confusion_prob += 0.15
         
         return min(max(confusion_prob, 0.0), 0.95)
     
@@ -148,31 +177,37 @@ class EyeTrackingService:
                        f"• {explanation['example']}\n"
                        f"주의: {explanation['impact']}")
         
-        # 키워드가 없으면 간단한 안내만
-        return "궁금한 점이 있으시면 언제든 직원에게 문의하세요."
+        # 기본 설명 (키워드가 없는 경우)
+        if confused_sentences and len(confused_sentences) > 0:
+            return (f"**이 부분이 복잡하신가요?**\n"
+                   f"• 금융 약관에는 법적 보호를 위한 중요한 내용들이 포함되어 있습니다.\n"
+                   f"• 천천히 읽어보시고, 궁금한 점은 언제든 문의하세요.\n"
+                   f"주의: 특히 {len(confused_sentences)}개 문장은 주의 깊게 확인해보세요.")
+        
+        return ("**약관 내용 안내**\n"
+               "• 이 내용은 상품의 중요한 조건들을 설명하고 있습니다.\n"
+               "• 이해가 어려우시면 언제든지 직원에게 설명을 요청하세요.\n"
+               "주의: 가입 전에 모든 조건을 충분히 이해하시는 것이 중요합니다.")
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
                                     section_text: str, reading_time: float, 
                                     gaze_data: Optional[Dict] = None) -> Dict:
-        """읽기 세션 분석 (메인 API 함수) - AI 모델 우선 사용"""
+        """읽기 세션 분석 (메인 API 함수)"""
         
         try:
-            # AI 모델 사용 가능시 AI 분석 우선
-            if AI_MODEL_AVAILABLE and ai_model_manager:
-                ai_result = await ai_model_manager.analyze_text(section_text)
-                difficulty_score = ai_result.get('difficulty_score', 0.5)
-                ai_explanation = ai_result.get('ai_explanation', '')
-                confused_sentences = [s.get('sentence_id', 0) for s in ai_result.get('confused_sections', [])]
-            else:
-                # Fallback: 기존 로직 사용
-                difficulty_score = self.get_text_difficulty(section_text)
-                confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
-                ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
+            # 1. 텍스트 난이도 분석
+            difficulty_score = self.get_text_difficulty(section_text)
             
-            # 혼란도는 읽기 시간 고려해서 계산 (AI와 결합)
+            # 2. 혼란도 계산
             confusion_probability = self.calculate_confusion_probability(
                 difficulty_score, reading_time, section_length=len(section_text)
             )
+            
+            # 3. 어려운 문장 식별
+            confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
+            
+            # 4. AI 설명 생성
+            ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
             
             # 5. 이해도 레벨 결정
             if confusion_probability > 0.7:
@@ -197,66 +232,36 @@ class EyeTrackingService:
                     'start_time': datetime.now(timezone.utc)
                 }
             
-            # 세션 데이터 업데이트 (하이브리드 결과 포함)
-            section_data = {
+            self.session_data[consultation_id]['sections'].append({
                 'section_name': section_name,
                 'difficulty_score': difficulty_score,
                 'confusion_probability': confusion_probability,
                 'comprehension_level': comprehension_level,
                 'timestamp': datetime.now(timezone.utc)
-            }
-
-            # 텍스트 분석 결과도 세션에 저장
-            if analysis_data:
-                section_data.update({
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-                # 세션 레벨에서도 업데이트
-                self.session_data[consultation_id].update({
-                    'current_section': section_name,
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-            self.session_data[consultation_id]['sections'].append(section_data)
+            })
             
-            # 7. 텍스트 분석 (문장 + 단어 동시 분석)
-            analysis_data = {}
-            if self.hybrid_analyzer:
+            # 7. 하이브리드 분석 추가
+            hybrid_data = {}
+            if hybrid_analyzer:
                 try:
-                    analysis_result = self.hybrid_analyzer.analyze_text_hybrid(section_text)
-                    analysis_data = {
-                        "difficult_terms": analysis_result.difficult_terms,
-                        "underlined_sections": analysis_result.underlined_sections,
-                        "detailed_explanations": analysis_result.detailed_explanations,
-                        "overall_difficulty": analysis_result.overall_difficulty,
-                        "comprehension_level": analysis_result.comprehension_level
+                    hybrid_result = hybrid_analyzer.analyze_text_hybrid(section_text)
+                    hybrid_data = {
+                        "difficult_terms": hybrid_result.difficult_terms,
+                        "underlined_sections": hybrid_result.underlined_sections,
+                        "detailed_explanations": hybrid_result.detailed_explanations
                     }
-
-                    # 분석 결과로 기존 값들 보완
-                    if analysis_result.overall_difficulty > 0:
-                        difficulty_score = (difficulty_score + analysis_result.overall_difficulty) / 2
-                    if analysis_result.comprehension_level in ['high', 'medium', 'low']:
-                        comprehension_level = analysis_result.comprehension_level
-
                 except Exception as e:
-                    print(f"텍스트 분석 실패: {e}")
-                    analysis_data = {
+                    print(f"하이브리드 분석 실패: {e}")
+                    hybrid_data = {
                         "difficult_terms": [],
                         "underlined_sections": [],
-                        "detailed_explanations": {},
-                        "overall_difficulty": 0.0,
-                        "comprehension_level": "medium"
+                        "detailed_explanations": {}
                     }
             else:
-                analysis_data = {
+                hybrid_data = {
                     "difficult_terms": [],
                     "underlined_sections": [],
-                    "detailed_explanations": {},
-                    "overall_difficulty": 0.0,
-                    "comprehension_level": "medium"
+                    "detailed_explanations": {}
                 }
             
             result = {
@@ -274,8 +279,8 @@ class EyeTrackingService:
                 }
             }
             
-            # 분석 데이터 추가
-            result.update(analysis_data)
+            # 하이브리드 데이터 추가
+            result.update(hybrid_data)
             return result
             
         except Exception as e:
@@ -289,38 +294,29 @@ class EyeTrackingService:
                 "recommendations": ["기술적 문제로 인해 분석이 제한됩니다. 직원에게 문의하세요."]
             }
     
-    def _generate_recommendations(self, confusion_prob: float, difficulty: float, reading_time: float) -> List[str]:
-        """간소화된 추천사항 생성 (AI 모델로 대체 예정)"""
-        
-        if confusion_prob > 0.7:
-            return ["이해하기 어려운 부분이 있으시면 직원에게 설명을 요청하세요."]
-        elif confusion_prob > 0.5:
-            return ["중요한 내용이니 충분한 시간을 들여 확인해보세요."]
-        else:
-            return ["잘 이해하고 계십니다."]
-    
     def get_session_summary(self, consultation_id: str) -> Optional[Dict]:
         """세션 전체 요약 정보 반환"""
         if consultation_id not in self.session_data:
             return None
-
+        
         session = self.session_data[consultation_id]
         sections = session['sections']
-
+        
         if not sections:
             return None
-
+        
+        # 전체 통계 계산
         avg_difficulty = sum(s['difficulty_score'] for s in sections) / len(sections)
         avg_confusion = sum(s['confusion_probability'] for s in sections) / len(sections)
-
+        
         comprehension_counts = {
             'high': len([s for s in sections if s['comprehension_level'] == 'high']),
             'medium': len([s for s in sections if s['comprehension_level'] == 'medium']),
             'low': len([s for s in sections if s['comprehension_level'] == 'low'])
         }
-
+        
         confused_sections = [s['section_name'] for s in sections if s['confusion_probability'] > 0.6]
-
+        
         return {
             'consultation_id': consultation_id,
             'total_sections': len(sections),
@@ -331,119 +327,6 @@ class EyeTrackingService:
             'session_duration': (datetime.now(timezone.utc) - session['start_time']).total_seconds() / 60,
             'last_updated': sections[-1]['timestamp'].isoformat() if sections else None
         }
-
-    def process_gaze_data(self, consultation_id: str, gaze_data: Dict) -> Dict:
-        """실시간 시선 데이터 처리"""
-        if consultation_id not in self.session_data:
-            self.session_data[consultation_id] = {
-                'gaze_points': [],
-                'current_section': '',
-                'confusion_level': 0.0,
-                'start_time': datetime.now(timezone.utc)
-            }
-
-        session = self.session_data[consultation_id]
-        session['gaze_points'].append({
-            'x': gaze_data['x'],
-            'y': gaze_data['y'],
-            'timestamp': gaze_data['timestamp'],
-            'confidence': gaze_data['confidence']
-        })
-
-        # 최근 시선 패턴 분석
-        if len(session['gaze_points']) > 10:
-            recent_points = session['gaze_points'][-10:]
-            analysis = self._analyze_gaze_pattern(recent_points)
-            session['confusion_level'] = analysis.get('confusion_level', 0.0)
-
-        return {
-            'processed': True,
-            'gaze_points_count': len(session['gaze_points']),
-            'current_confusion': session['confusion_level']
-        }
-
-    def get_current_confusion_status(self, consultation_id: str) -> Dict:
-        """현재 혼란도 상태 반환 (프론트엔드 AI 도우미용)"""
-        if consultation_id not in self.session_data:
-            return {
-                'is_confused': False,
-                'confusion_probability': 0.0,
-                'current_section': '',
-                'ai_suggestion': None,
-                'difficult_terms': [],
-                'suggested_explanations': []
-            }
-
-        session = self.session_data[consultation_id]
-        confusion_level = session.get('confusion_level', 0.0)
-        is_confused = confusion_level > 0.7
-
-        # AI 도우미 제안 생성
-        ai_suggestion = None
-        difficult_terms = session.get('difficult_terms', [])
-        if is_confused:
-            current_section = session.get('current_section', '현재 섹션')
-            ai_suggestion = {
-                'section': current_section,
-                'explanation': f'{current_section}에서 어려운 부분이 감지되었습니다.',
-                'simpleExample': '전문 용어나 복잡한 조건이 포함되어 있을 수 있습니다.'
-            }
-
-            # 어려운 용어가 있으면 구체적인 설명 추가
-            if difficult_terms:
-                ai_suggestion['explanation'] = f"'{difficult_terms[0].get('term', '용어')}'와 같은 금융 용어가 어려울 수 있습니다."
-
-        return {
-            'is_confused': is_confused,
-            'confusion_probability': confusion_level,
-            'current_section': session.get('current_section', ''),
-            'ai_suggestion': ai_suggestion,
-            'difficult_terms': difficult_terms[:3],  # 최대 3개까지
-            'suggested_explanations': session.get('detailed_explanations', {})
-        }
-
-    def get_reading_progress(self, consultation_id: str) -> Dict:
-        """읽기 진행률 반환"""
-        if consultation_id not in self.session_data:
-            return {
-                'percentage': 0,
-                'current_section': '',
-                'sections_completed': 0,
-                'total_sections': 0,
-                'time_remaining': 0
-            }
-
-        session = self.session_data[consultation_id]
-        sections_completed = len(session.get('sections', []))
-        total_sections = 10
-
-        percentage = min((sections_completed / total_sections) * 100, 100) if total_sections > 0 else 0
-        time_remaining = max((total_sections - sections_completed) * 2, 0)
-
-        return {
-            'percentage': round(percentage),
-            'current_section': session.get('current_section', ''),
-            'sections_completed': sections_completed,
-            'total_sections': total_sections,
-            'time_remaining': time_remaining
-        }
-
-    def _analyze_gaze_pattern(self, gaze_points: List[Dict]) -> Dict:
-        """시선 패턴 분석"""
-        if len(gaze_points) < 3:
-            return {'confusion_level': 0.0}
-
-        total_distance = 0
-        for i in range(1, len(gaze_points)):
-            prev = gaze_points[i-1]
-            curr = gaze_points[i]
-            distance = ((curr['x'] - prev['x'])**2 + (curr['y'] - prev['y'])**2)**0.5
-            total_distance += distance
-
-        avg_distance = total_distance / (len(gaze_points) - 1)
-        confusion_level = min(avg_distance / 100.0, 1.0)
-
-        return {'confusion_level': confusion_level}
 
 # 전역 서비스 인스턴스
 eyetrack_service = EyeTrackingService()

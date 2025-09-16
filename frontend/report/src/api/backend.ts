@@ -35,6 +35,21 @@ export interface ConsultationReport {
     comprehension_level: string;
     analysis_timestamp: string;
   }>;
+  detailed_info?: {
+    product_name: string;
+    investment_type: string;
+    total_amount: string;
+    important_items: Array<{
+      text: string;
+      desc: string;
+    }>;
+    expected_return: {
+      period: string;
+      amount: string;
+      profit: string;
+    };
+    todo_items: string[];
+  };
 }
 
 export interface ConsultationSummary {

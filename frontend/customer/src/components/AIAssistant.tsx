@@ -128,38 +128,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               </div>
             </div>
 
-            {/* 피드백 */}
-            <div className="feedback-section">
-              <span className="feedback-label">도움이 되셨나요?</span>
-              <div className="feedback-buttons">
-                <button 
-                  className={`feedback-btn ${userFeedback === 'helpful' ? 'selected' : ''}`}
-                  onClick={() => handleFeedback('helpful')}
-                >
-                  <span>👍</span> 네, 이해했어요
-                </button>
-                <button 
-                  className={`feedback-btn ${userFeedback === 'not-helpful' ? 'selected' : ''}`}
-                  onClick={() => handleFeedback('not-helpful')}
-                >
-                  <span>🤔</span> 더 설명이 필요해요
-                </button>
-              </div>
-            </div>
-
-            {userFeedback === 'helpful' && (
-              <div className="success-message">
-                <span className="success-icon">✅</span>
-                <p>좋습니다! 계속 읽어주세요.</p>
-              </div>
-            )}
-
-            {userFeedback === 'not-helpful' && (
-              <div className="additional-help">
-                <p>직원에게 직접 설명을 들으시겠어요?</p>
-                <button className="call-staff">직원 호출하기</button>
-              </div>
-            )}
           </div>
         </div>
       )}

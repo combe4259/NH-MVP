@@ -1,13 +1,32 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 from datetime import datetime, timezone
 import os
 from supabase import create_client, Client
 
 from models.schemas import ReadingData, AnalysisResponse, APIResponse
+from pydantic import BaseModel
+from typing import Optional
 from models.database import get_db_connection, release_db_connection
 from services.eyetrack_service import eyetrack_service
+
+# 얼굴 분석 서비스 import (조건부)
+try:
+    from services.face_service import face_service
+    FACE_SERVICE_AVAILABLE = True
+except ImportError:
+    FACE_SERVICE_AVAILABLE = False
+
+# 텍스트 분석 서비스 import (조건부)
+try:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+    from eyetrack.hybrid_analyzer import HybridTextAnalyzer
+    TEXT_ANALYZER_AVAILABLE = True
+except ImportError:
+    TEXT_ANALYZER_AVAILABLE = False
 
 # Supabase 클라이언트 초기화
 supabase_url = os.getenv("SUPABASE_URL")
@@ -16,6 +35,32 @@ supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# 통합 분석 요청 모델
+class ComprehensiveAnalysisRequest(BaseModel):
+    consultation_id: str
+    customer_id: str
+    section_text: str
+    section_name: str = ""
+    reading_time: float
+    gaze_data: Optional[Dict[str, Any]] = None
+
+# 통합 분석 응답 모델
+class ComprehensiveAnalysisResponse(BaseModel):
+    overall_difficulty: float
+    confusion_probability: float
+    comprehension_level: str
+    difficult_terms: List[Dict[str, str]]
+    difficult_sentences: List[Dict[str, Any]]
+    ai_explanation: str
+    recommendations: List[str]
+    face_emotions: Optional[Dict[str, float]] = None
+
+class EmotionDataRequest(BaseModel):
+    consultation_id: str
+    customer_id: str
+    raw_emotion_scores: Dict[str, float]
+    timestamp: str
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_reading(data: ReadingData):
@@ -70,7 +115,7 @@ async def analyze_reading(data: ReadingData):
         
         # 프론트엔드 친화적 응답 형식 (텍스트 분석 포함)
         return {
-            "analysis_status": analysis_result.get('status', 'unknown'),
+            "status": analysis_result.get('status', 'unknown'),
             "difficulty_score": analysis_result.get('difficulty_score', 0.5),
             "confusion_probability": analysis_result.get('confusion_probability', 0.0),
             "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
@@ -130,7 +175,7 @@ async def get_session_summary(consultation_id: str):
         raise HTTPException(status_code=500, detail="세션 요약 조회 중 오류가 발생했습니다.")
 
 @router.get("/test/difficulty")
-async def test_difficulty_analysis(text: str = "중도해지 시 우대금리는 적용되지 않으며, 예금자보호법에 따른 보호 한도는 5천만원입니다."):
+async def test_difficulty_analysis(text: str = "계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한됩니다."):
     """
     텍스트 난이도 분석 테스트 API (개발/데모용)
     """
@@ -216,7 +261,7 @@ async def get_realtime_stats():
 
 @router.post("/simulate")
 async def simulate_analysis(
-    section_text: str = "중도해지 시 우대금리 조건은 적용되지 않습니다.", 
+    section_text: str = "계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한", 
     reading_time: float = 45.0,
     customer_confusion_level: str = "medium"
 ):
@@ -284,24 +329,69 @@ async def receive_gaze_data(consultation_id: str, gaze_x: float, gaze_y: float, 
         logger.error(f"시선 데이터 처리 실패: {e}")
         raise HTTPException(status_code=500, detail="시선 데이터 처리 중 오류가 발생했습니다.")
 
-@router.get("/confusion-status/{consultation_id}")
-async def get_confusion_status(consultation_id: str):
-    """현재 혼란도 상태 조회 (프론트엔드 AI 도우미용)"""
+@router.get("/ai-status/{consultation_id}")
+async def get_ai_assistant_status(consultation_id: str):
+    """AI 도우미 활성화 상태 조회 (통합 분석 결과 기반)"""
     try:
-        status = eyetrack_service.get_current_confusion_status(consultation_id)
+        # TODO: AI 서버에서 통합 분석 결과를 reading_analysis 테이블에서 조회
+        # 현재는 목업 데이터로 동작
 
+        import random
+        import time
+
+        # 목업: 시간에 따라 혼란도가 변하는 시뮬레이션
+        current_time = int(time.time())
+        should_trigger = (current_time % 20) < 7  # 20초마다 7초간 AI 도우미 활성화
+
+        if should_trigger:
+            mock_confused_sections = [
+            {
+                "id": "seizure_section_" + str(datetime.now().timestamp()),
+                "title": "압류 관련 제한 사항",
+                "content": "계좌에 법적 조치가 취해지면 예금을 찾을 수 없게 됩니다.",
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
+
+            return {
+            "consultation_id": consultation_id,
+            "should_trigger_ai_assistant": True,
+            "current_section": "압류 관련 제한 사항",
+            "ai_explanation": "계좌에 법적 조치가 취해지면 예금을 찾을 수 없게 됩니다.",
+            "recommendation": "법원에서 계좌를 막거나, 빚 담보로 예금이 잡히면 돈을 찾을 수 없습니다.",
+            "confused_sections": mock_confused_sections,
+            "confusion_probability": 0.85, # 높은 값으로 설정
+            "overall_difficulty": 0.75, # 높은 값으로 설정
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # 정상 상태 (AI 도우미 비활성화)
         return {
             "consultation_id": consultation_id,
-            "is_confused": status.get("is_confused", False),
-            "confusion_probability": status.get("confusion_probability", 0.0),
-            "current_section": status.get("current_section", ""),
-            "ai_suggestion": status.get("ai_suggestion"),
+            "should_trigger_ai_assistant": False,
+            "current_section": "상품 소개",
+            "ai_explanation": "",
+            "recommendation": "",
+            "confused_sections": [],
+            "confusion_probability": 0.3,
+            "overall_difficulty": 0.4,
             "timestamp": datetime.now().isoformat()
         }
 
     except Exception as e:
-        logger.error(f"혼란도 상태 조회 실패: {e}")
-        raise HTTPException(status_code=500, detail="상태 조회 중 오류가 발생했습니다.")
+        logger.error(f"AI 상태 조회 실패: {e}")
+        # 오류 시에도 기본 목업 응답
+        return {
+            "consultation_id": consultation_id,
+            "should_trigger_ai_assistant": False,
+            "current_section": "기본 상태",
+            "ai_explanation": "",
+            "recommendation": "",
+            "confused_sections": [],
+            "confusion_probability": 0.2,
+            "overall_difficulty": 0.3,
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/reading-progress/{consultation_id}")
 async def get_reading_progress(consultation_id: str):
@@ -322,6 +412,39 @@ async def get_reading_progress(consultation_id: str):
     except Exception as e:
         logger.error(f"읽기 진행률 조회 실패: {e}")
         raise HTTPException(status_code=500, detail="진행률 조회 중 오류가 발생했습니다.")
+
+@router.post("/submit-emotion-data")
+async def submit_raw_emotion_data(request: EmotionDataRequest):
+    """Raw 감정 데이터 제출 (AI 서버에서 분석 후 통합 결과 저장)"""
+    try:
+        # TODO: AI 서버에게 위임할 부분
+        # 1. raw_emotion_scores를 AI 서버로 전송
+        # 2. AI 서버에서 텍스트, 시선추적, 감정을 종합 분석
+        # 3. 통합 분석 결과를 reading_analysis 테이블에 저장
+
+        logger.info(f"Raw 감정 데이터 수신: {request.consultation_id}")
+
+        # 임시: Raw 데이터를 별도 테이블에 저장 (AI 서버 처리 대기)
+        if supabase:
+            raw_data = {
+                "consultation_id": request.consultation_id,
+                "customer_id": request.customer_id,
+                "raw_confusion": request.raw_emotion_scores.get("confusion", 0),
+                "raw_engagement": request.raw_emotion_scores.get("engagement", 0),
+                "raw_frustration": request.raw_emotion_scores.get("frustration", 0),
+                "raw_boredom": request.raw_emotion_scores.get("boredom", 0),
+                "timestamp": request.timestamp,
+                "status": "pending_ai_analysis"
+            }
+
+            result = supabase.table("raw_emotion_data").insert(raw_data).execute()
+
+        return {"success": True, "message": "Raw 감정 데이터 수신 완료"}
+        
+
+    except Exception as e:
+        logger.error(f"Raw 감정 데이터 처리 실패: {e}")
+        raise HTTPException(status_code=500, detail="Raw 감정 데이터 처리 중 오류가 발생했습니다.")
 
 @router.get("/health")
 async def eyetracking_health():

@@ -111,6 +111,9 @@ async def get_dashboard_overview():
                 .limit(1)\
                 .execute()
 
+            # TODO: AI 서버에서 통합 분석한 결과를 reading_analysis에서 조회
+            # emotion_analysis 테이블 직접 조회 삭제 (역할 중복 제거)
+
             # 지속 시간 계산
             start_time = datetime.fromisoformat(consultation['start_time'].replace('Z', '+00:00'))
             duration_minutes = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
