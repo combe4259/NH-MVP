@@ -26,6 +26,16 @@ interface EyeTrackerProps {
   onGazeData?: (data: GazeData) => void;
 }
 
+const loadScript = (src: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.head.appendChild(script);
+  });
+};
+
 const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   const [gazePosition, setGazePosition] = useState<{ x: number; y: number } | null>(null);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
@@ -164,45 +174,35 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   useEffect(() => {
     const initMediaPipe = async () => {
       try {
-        // MediaPipe 스크립트가 로드될 때까지 대기
-        let attempts = 0;
-        while (!window.FaceMesh && attempts < 30) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
+        
+        if (!window.FaceMesh || !window.Camera) {
+          throw new Error('MediaPipe 스크립트 로딩 실패');
         }
         
-        if (!window.FaceMesh) {
-          throw new Error('MediaPipe FaceMesh가 로드되지 않았습니다');
-        }
-        
-        // FaceMesh 초기화 - window 객체에서 직접 사용
-        const faceMesh = new window.FaceMesh();
-
-        // 옵션 설정 전 대기
-        await new Promise(resolve => setTimeout(resolve, 100));
+        const faceMesh = new window.FaceMesh({
+          locateFile: (file: string) => {
+            return `/mediapipe/face_mesh/${file}`;
+          },
+        });
 
         faceMesh.setOptions({
           maxNumFaces: 1,
           refineLandmarks: true,
           minDetectionConfidence: 0.5,
           minTrackingConfidence: 0.5,
-          selfieMode: true  // 좌우 반전
+          selfieMode: true
         });
 
         faceMesh.onResults(onResults);
         faceMeshRef.current = faceMesh;
 
-        // 카메라 초기화
-        if (videoRef.current && window.Camera) {
+        if (videoRef.current) {
           const camera = new window.Camera(videoRef.current, {
             onFrame: async () => {
-              try {
-                if (faceMeshRef.current && videoRef.current) {
-                  await faceMeshRef.current.send({ image: videoRef.current });
-                }
-              } catch (frameError) {
-                // 개별 프레임 오류는 무시
-                console.warn('프레임 처리 오류 무시됨:', frameError);
+              if (faceMeshRef.current && videoRef.current) {
+                await faceMeshRef.current.send({ image: videoRef.current });
               }
             },
             width: 640,
@@ -211,17 +211,13 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
 
           cameraRef.current = camera;
           await camera.start();
-
           setIsMediaPipeLoaded(true);
           console.log('MediaPipe 초기화 완료');
         }
 
       } catch (error) {
-        console.warn('MediaPipe 초기화 실패, 백그라운드에서 계속 시도:', error);
-        // 초기화 실패해도 상태는 활성으로 설정
-        setIsMediaPipeLoaded(true);
-        setCalibrationComplete(true);
-        setAccuracy(85.0);
+        console.error('MediaPipe 초기화 실패:', error);
+        setError('MediaPipe 초기화에 실패했습니다. 파일을 확인해주세요.');
       }
     };
 
@@ -230,22 +226,16 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
     }
 
     return () => {
-      // 완전한 리소스 정리 (MediaPipe 파일 로더 문제 해결)
       if (cameraRef.current) {
         cameraRef.current.stop();
         cameraRef.current = null;
       }
       if (faceMeshRef.current) {
-        try {
-          faceMeshRef.current.close();
-        } catch (e) {
-          // close() 실패해도 계속 진행
-        }
+        faceMeshRef.current.close();
         faceMeshRef.current = null;
       }
-      console.log('MediaPipe 완전 정리');
     };
-  }, [isTracking, onResults]);
+  }, [isTracking]);
 
   // 캘리브레이션 시작
   useEffect(() => {
@@ -267,7 +257,6 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
       setCalibrationStep(currentStep + 1);
       setCalibrationPoints(currentStep + 1);
       
-      // 2초 후 다음 포인트로 넘어감 (사용자가 점을 응시하며 모델이 학습할 시간)
       setTimeout(() => {
         currentStep++;
         showCalibrationPoint();
@@ -280,15 +269,14 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   const finishCalibration = async () => {
     if (!faceMeshRef.current) return;
     try {
-      // MediaPipe는 실시간으로 동작하므로 캘리브레이션은 주로 사용자 적응 과정
-      const calculatedAccuracy = Math.random() * 15 + 80; // 80-95% 범위 (MediaPipe가 더 정확)
+      const calculatedAccuracy = Math.random() * 15 + 80;
       setAccuracy(calculatedAccuracy);
       setCalibrationComplete(true);
       console.log(`MediaPipe 캘리브레이션 완료, 정확도: ${calculatedAccuracy.toFixed(1)}%`);
     } catch (error) {
       console.error('캘리브레이션 완료 처리 중 오류:', error);
       setCalibrationComplete(true);
-      setAccuracy(80); // 오류 시 기본값 설정
+      setAccuracy(80);
     }
   };
 
@@ -312,21 +300,17 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
 
   return (
     <div className="eye-tracker-container">
+      {error && <div className="error-message">{error}</div>}
       {isTracking && (
         <div className="tracker-active-overlay" style={{ display: 'none' }}>
           <div className="webcam-view">
             <video ref={videoRef} className="webcam-video" autoPlay muted style={{ display: 'none' }} />
             <canvas ref={canvasRef} className="webcam-canvas" style={{ display: 'none' }} />
           </div>
-
-          
         </div>
       )}
-
-
     </div>
   );
 };
 
 export default EyeTracker;
-
