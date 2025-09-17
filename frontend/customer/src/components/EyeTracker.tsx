@@ -1,8 +1,18 @@
 /// <reference types="react/jsx-runtime" />
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
 import './EyeTracker.css';
+
+// MediaPipe 타입 정의
+type FaceMesh = any;
+type Camera = any;
+
+// MediaPipe는 window 객체에서 직접 사용
+declare global {
+  interface Window {
+    FaceMesh: any;
+    Camera: any;
+  }
+}
 
 interface GazeData {
   x: number;
@@ -23,6 +33,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   const [isMediaPipeLoaded, setIsMediaPipeLoaded] = useState(false);
   const [calibrationStep, setCalibrationStep] = useState(0);
   const [accuracy, setAccuracy] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceMeshRef = useRef<FaceMesh | null>(null);
@@ -153,27 +164,42 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   useEffect(() => {
     const initMediaPipe = async () => {
       try {
-        // FaceMesh 초기화 (오류 처리 강화)
-        const faceMesh = new FaceMesh({
-          locateFile: (file) => {
+        // MediaPipe 스크립트가 로드될 때까지 대기
+        let attempts = 0;
+        while (!window.FaceMesh && attempts < 30) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+        
+        if (!window.FaceMesh) {
+          throw new Error('MediaPipe FaceMesh가 로드되지 않았습니다');
+        }
+        
+        // FaceMesh 초기화 - window 객체에서 직접 사용
+        const faceMesh = new window.FaceMesh({
+          locateFile: (file: string) => {
+            console.log('MediaPipe requesting file:', file);
             return `/mediapipe/face_mesh/${file}`;
           }
         });
 
+        // 옵션 설정 전 대기
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         faceMesh.setOptions({
           maxNumFaces: 1,
           refineLandmarks: true,
           minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
+          minTrackingConfidence: 0.5,
+          selfieMode: true  // 좌우 반전
         });
 
         faceMesh.onResults(onResults);
         faceMeshRef.current = faceMesh;
 
         // 카메라 초기화
-        if (videoRef.current) {
-          const camera = new Camera(videoRef.current, {
+        if (videoRef.current && window.Camera) {
+          const camera = new window.Camera(videoRef.current, {
             onFrame: async () => {
               try {
                 if (faceMeshRef.current && videoRef.current) {
@@ -181,7 +207,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
                 }
               } catch (frameError) {
                 // 개별 프레임 오류는 무시
-                console.warn('프레임 처리 오류 무시됨');
+                console.warn('프레임 처리 오류 무시됨:', frameError);
               }
             },
             width: 640,

@@ -226,7 +226,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
             onMouseUp={handleTextSelection}
             style={{ position: 'relative' }}
         >
-            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js">
+            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
                 <div className="pdf-viewer-wrapper">
                     <Viewer
                         fileUrl={fileUrl}

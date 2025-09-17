@@ -99,6 +99,7 @@ class ReadingData(BaseModel):
     consultation_id: str = Field(..., description="상담 세션 ID")
     section_text: str = Field(..., description="섹션 텍스트 내용")
     gaze_data: Optional[Dict[str, Any]] = Field(None, description="시선 추적 데이터")
+    face_analysis: Optional[Dict[str, Any]] = Field(None, description="얼굴 분석 데이터 (CNN-LSTM)")
 
 class ConsultationCreate(BaseModel):
     """새 상담 생성 요청"""

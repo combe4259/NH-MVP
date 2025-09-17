@@ -28,6 +28,11 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
   const [error, setError] = useState<string>('');
   const [faceDetected, setFaceDetected] = useState(false);
   const [isMockMode, setIsMockMode] = useState(false);
+  
+  // CNN-LSTM을 위한 프레임 버퍼 (30프레임 시퀀스)
+  const frameBufferRef = useRef<ImageData[]>([]);
+  const frameBufferSize = 30; // CNN-LSTM sequence length
+  const frameInterval = 200; // 200ms마다 프레임 캡처 (5fps, 6초간 수집)
 
   // 웹캠 시작
   const startWebcam = async () => {
@@ -93,30 +98,14 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
     }
   };
 
-  // 목업데이터 폴백 시작
+  // 목업데이터 폴백 시작 - 제거
   const startMockDataFallback = () => {
     setIsMockMode(true);
     setIsWebcamActive(false);
-    setError('웹캠 연결 실패 - 목업데이터로 진행합니다');
-
-    // 주기적으로 목업 얼굴 분석 데이터 전송
-    const mockInterval = setInterval(() => {
-      const mockFaceData: FaceDetectionData = {
-        hasDetection: true,
-        confidence: 0.9,
-        emotions: {
-          engagement: 0.75,
-          confusion: 0.2,
-          frustration: 0.1,
-          boredom: 0.15
-        }
-      };
-      onFaceAnalysis(mockFaceData);
-      setFaceDetected(true);
-    }, 3000);
-
-    // 컴포넌트 언마운트 시 정리를 위해 interval ID 저장
-    return () => clearInterval(mockInterval);
+    setError('웹캠 연결 실패 - 프레임 수집 모드로 전환');
+    
+    // 목업 데이터 대신 프레임 버퍼 초기화만
+    console.log('웹캠 실패 - 실제 얼굴 분석을 위한 프레임 버퍼 초기화');
   };
 
   // 웹캠 중지
@@ -142,38 +131,86 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
     // 비디오가 준비되지 않았으면 대기
     if (video.readyState < 2) return;
 
-    // 캔버스에 현재 프레임 그리기
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
+    // 112x112로 리사이즈 (CNN-LSTM 입력 크기)
+    canvas.width = 112;
+    canvas.height = 112;
+    ctx.drawImage(video, 0, 0, 112, 112);
 
-    // 간단한 얼굴 감지 시뮬레이션 (실제로는 AI 모델 사용)
-    const hasDetection = await simulateFaceDetection(canvas);
-
-    setFaceDetected(hasDetection);
-
-    if (hasDetection) {
-      // Mock 감정 분석 데이터 생성
-      const mockEmotions = {
-        engagement: Math.random() * 0.4 + 0.6, // 0.6-1.0
-        confusion: Math.random() * 0.3 + 0.1,   // 0.1-0.4
-        frustration: Math.random() * 0.2,       // 0.0-0.2
-        boredom: Math.random() * 0.3            // 0.0-0.3
-      };
-
-      const faceData: FaceDetectionData = {
-        hasDetection: true,
-        confidence: 0.85 + Math.random() * 0.15, // 0.85-1.0
-        emotions: mockEmotions
-      };
-
-      onFaceAnalysis(faceData);
-    } else {
-      onFaceAnalysis({
-        hasDetection: false,
-        confidence: 0
-      });
+    // 프레임 데이터 가져오기
+    const imageData = ctx.getImageData(0, 0, 112, 112);
+    
+    // 프레임 버퍼에 추가
+    frameBufferRef.current.push(imageData);
+    
+    // 버퍼 크기 유지 (최대 30프레임)
+    if (frameBufferRef.current.length > frameBufferSize) {
+      frameBufferRef.current.shift();
     }
+
+    // 30프레임이 모이면 백엔드로 전송
+    if (frameBufferRef.current.length === frameBufferSize) {
+      await sendFramesToBackend();
+    }
+
+    // 간단한 얼굴 감지 (픽셀 체크)
+    const hasDetection = await simulateFaceDetection(canvas);
+    setFaceDetected(hasDetection);
+  };
+
+  // 프레임 시퀀스를 백엔드로 전송
+  const sendFramesToBackend = async () => {
+    try {
+      // 프레임 데이터를 Base64로 변환
+      const frames = frameBufferRef.current.map(imageData => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 112;
+        canvas.height = 112;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.putImageData(imageData, 0, 0);
+          return canvas.toDataURL('image/jpeg', 0.7).split(',')[1]; // Base64만 추출
+        }
+        return '';
+      }).filter(frame => frame !== '');
+
+      // 백엔드 AI 서비스 호출
+      const response = await fetch('http://localhost:8000/api/face/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          frames: frames,
+          sequence_length: frameBufferSize
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // confusion 레벨만 사용 (0-3 -> 0-1 정규화)
+        const confusionLevel = result.confusion || 0;
+        const normalizedConfusion = confusionLevel / 3.0; // 0-3을 0-1로 정규화
+        
+        const faceData: FaceDetectionData = {
+          hasDetection: true,
+          confidence: result.confidence || 0.9,
+          emotions: {
+            engagement: 0, // 사용 안 함
+            confusion: normalizedConfusion,
+            frustration: 0, // 사용 안 함
+            boredom: 0 // 사용 안 함
+          }
+        };
+        
+        onFaceAnalysis(faceData);
+      }
+    } catch (error) {
+      console.error('프레임 분석 실패:', error);
+    }
+    
+    // 버퍼 초기화 (다음 시퀀스를 위해)
+    frameBufferRef.current = [];
   };
 
   // 간단한 얼굴 감지 시뮬레이션 (픽셀 분석)
@@ -223,10 +260,10 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
   useEffect(() => {
     if (!isActive || !isWebcamActive) return;
 
-    const interval = setInterval(captureAndAnalyze, 2000); // 2초마다
+    const interval = setInterval(captureAndAnalyze, frameInterval); // 200ms마다 (5fps)
 
     return () => clearInterval(interval);
-  }, [isActive, isWebcamActive]);
+  }, [isActive, isWebcamActive, frameInterval]);
 
   // 컴포넌트 마운트/언마운트 시 웹캠 관리
   useEffect(() => {

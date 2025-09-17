@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Add parent directory to path to import text_simplifier
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# text_simplifier_krfinbert_kogpt2는 사용하지 않음 (ai_model_service의 fin_simplifier 사용)
+# ai_model_service의 fin_simplifier 사용
 TEXT_SIMPLIFIER_AVAILABLE = False
 FinancialTextSimplifier = None
 
@@ -86,7 +86,8 @@ class EyeTrackingService:
         self.text_simplifier = None  # ai_model_service를 직접 사용
     
     def get_text_difficulty(self, section_text: str) -> float:
-        """한국어 금융 약관 텍스트의 난이도 분석 (기존 로직 개선)"""
+        """[DEPRECATED] AI 모델 서비스를 사용하세요"""
+        # TODO: 제거 예정 - ai_model_manager.analyze_text() 사용
         
         # 어려운 금융 용어들 (확장)
         difficult_financial_terms = [
@@ -252,34 +253,57 @@ class EyeTrackingService:
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
                                     section_text: str, reading_time: float, 
-                                    gaze_data: Optional[Dict] = None) -> Dict[str, Any]:
+                                    gaze_data: Optional[Dict] = None,
+                                    face_data: Optional[Dict] = None) -> Dict[str, Any]:
         """읽기 세션 분석 (메인 API 함수)"""
         
         try:
-            # 1. 텍스트 난이도 분석
-            difficulty_score = self.get_text_difficulty(section_text)
+            # AI 모델 서비스 사용
+            from services.ai_model_service import ai_model_manager
+            from services.integrated_analysis_service import integrated_analyzer
             
-            # 2. 혼란도 계산
-            confusion_probability = self.calculate_confusion_probability(
-                difficulty_score, reading_time, section_length=len(section_text)
+            # 1. 텍스트 난이도 분석
+            ai_result = await ai_model_manager.analyze_text(section_text)
+            difficulty_score = ai_result.get('difficulty_score', 0.5)
+            
+            # 2. 통합 분석 서비스 호출
+            integrated_result = await integrated_analyzer.analyze_integrated(
+                consultation_id=consultation_id,
+                section_name=section_name,
+                section_text=section_text,
+                text_difficulty=difficulty_score,
+                face_data=face_data,
+                gaze_data=gaze_data,
+                reading_time=reading_time
             )
             
-            # 3. 어려운 문장 식별
-            confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
+            # 3. AI 간소화가 필요한 경우
+            ai_explanation = ''
+            if integrated_result['should_simplify_text']:
+                try:
+                    simplified = await ai_model_manager.hf_models.simplify_text(section_text)
+                    ai_explanation = f"**쉽게 설명해드릴게요:**\n{simplified}"
+                    logger.info(f"문장 간소화 수행: {section_name}")
+                except Exception as e:
+                    logger.error(f"간소화 실패: {e}")
+                    ai_explanation = ai_result.get('ai_explanation', '')
             
-            # 4. AI 설명 생성
-            ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
+            confused_sections = ai_result.get('confused_sections', [])
             
-            # 5. 이해도 레벨 결정
-            if confusion_probability > 0.7:
-                comprehension_level = "low"
+            # 4. 통합 분석 결과 사용
+            confusion_probability = integrated_result['integrated_confusion']
+            comprehension_level = integrated_result['comprehension_level']
+            
+            # 5. 상태 결정
+            if comprehension_level == "low":
                 status = "confused"
-            elif confusion_probability > 0.4:
-                comprehension_level = "medium"
+            elif comprehension_level == "medium":
                 status = "moderate"
             else:
-                comprehension_level = "high"
                 status = "good"
+            
+            # 6. 어려운 문장 추출
+            confused_sentences = [cs.get('sentence_index', i) for i, cs in enumerate(confused_sections)]
             
             # 6. 추천사항 생성
             recommendations = self._generate_recommendations(

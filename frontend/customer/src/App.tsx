@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 import AIAssistant from './components/AIAssistant';
-import { useRealtimeAnalysis } from './services/RealtimeAnalysisService';
 import PDFViewer from './components/PDFViewer';
 import WebcamFaceDetection from './components/WebcamFaceDetection';
 import EyeTracker from './components/EyeTracker';
@@ -56,6 +55,9 @@ function App() {
   const [productType] = useState('정기예금');
   const [showAIHelper, setShowAIHelper] = useState(false);
   const [confusedSections, setConfusedSections] = useState<ConfusedSection[]>([]);
+  
+  // 상담 ID (나중에 props나 context로 받도록 수정 필요)
+  const consultationId = '29853704-6f54-4df2-bb40-6efa9a63cf53';
   const [aiSuggestion, setAiSuggestion] = useState<{
     section: string;
     explanation: string;
@@ -66,6 +68,7 @@ function App() {
   const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([]);
   const [mainTerms, setMainTerms] = useState<{term: string, definition: string}[]>([]);
   const [gazeDataBuffer, setGazeDataBuffer] = useState<any[]>([]);
+  const [faceAnalysisBuffer, setFaceAnalysisBuffer] = useState<any[]>([]);
   const pdfViewerRef = useRef<HTMLDivElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
@@ -80,18 +83,23 @@ function App() {
 
       const analysisData = response.data;
 
-      // 전체 문장으로 검색하도록 수정
-      const mockDifficultSentences: DifficultSentence[] = [
-        {
-          sentence: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
-          sentence_id: 'sentence_001',
-          difficulty_score: 0.8,
-          simplified_explanation: '법원에서 계좌를 막거나, 다른 사람이 그 돈에 대한 권리를 주장하면, 예금을 찾을 수 없게 됩니다.',
-          original_position: 1
-        }
-      ];
-
-      setDifficultSentences(mockDifficultSentences);
+      // 실제 AI 분석 결과 사용
+      if (analysisData.difficult_sentences && analysisData.difficult_sentences.length > 0) {
+        const difficultSentencesFromAI: DifficultSentence[] = analysisData.difficult_sentences.map((sent: any, idx: number) => ({
+          sentence: sent.sentence || sent.text,
+          sentence_id: sent.id || `sentence_${idx}`,
+          difficulty_score: sent.difficulty_score || 0.7,
+          simplified_explanation: sent.simplified_explanation || sent.explanation || '이 부분이 어려울 수 있습니다. 천천히 읽어보세요.',
+          original_position: sent.position || idx
+        }));
+        
+        setDifficultSentences(difficultSentencesFromAI);
+        console.log('AI 분석 어려운 문장:', difficultSentencesFromAI);
+      } else {
+        // AI 응답이 없으면 빈 배열
+        setDifficultSentences([]);
+        console.log('AI 분석 결과 없음');
+      }
 
       // 우측 사이드바 주요 용어 설정
       setMainTerms([
@@ -125,12 +133,18 @@ function App() {
 
   const sendAnalysisData = useCallback(async (sectionName: string, sectionText: string, readingTime: number) => {
     try {
+      // 최신 얼굴 분석 데이터 가져오기
+      const latestFaceData = faceAnalysisBuffer.length > 0 
+        ? faceAnalysisBuffer[faceAnalysisBuffer.length - 1]
+        : null;
+      
       const response = await axios.post(`${API_BASE_URL}/eyetracking/analyze`, {
         consultation_id: '29853704-6f54-4df2-bb40-6efa9a63cf53',
-        customer_id: '12345678-1234-5678-9012-123456789012',
+        customer_id: '069efa8e-8d80-4700-9355-ec57caca3fe0',  // TODO: 실제 고객 ID 사용
         current_section: sectionName,
         section_text: sectionText,
         reading_time: readingTime,
+        face_analysis: latestFaceData,  // 얼굴 분석 데이터 추가
         gaze_data: gazeDataBuffer.length > 0 ? {
           raw_points: gazeDataBuffer.slice(-20).map(point => ({
             x: point.screen_x || point.x || 0,
@@ -154,7 +168,7 @@ function App() {
 
       const analysis = response.data;
 
-      if (analysis.confusion_probability > 0.6) {
+      if (analysis.confusion_probability > 0.15) {  // 테스트용 임계값 낮춤
         const confusedSection = {
           id: 'section_' + Date.now(),
           title: sectionName,
@@ -189,7 +203,7 @@ function App() {
       // 폴백으로 특정 문장 목업데이터 사용 - 좌표 덮어쓰기 방지를 위해 주석 처리
       // setSpecificMockData();
     }
-  }, []);
+  }, [faceAnalysisBuffer, gazeDataBuffer]);
 
   useEffect(() => {
     console.log('컴포넌트 마운트됨 - 시선 추적 시작');
@@ -239,13 +253,16 @@ function App() {
     return () => clearTimeout(timer);
   }, [isTracking, currentSection, sendAnalysisData, analyzeTextContent]);
 
-  // AI 상태 주기적 확인 (3초마다)
+  // AI 상태 주기적 확인 비활성화 (목업 데이터 제거)
+  // 실제 통합 분석 결과만 사용
+  /*
   useEffect(() => {
     if (!isTracking) return;
 
     const statusInterval = setInterval(checkAIStatus, 3000);
     return () => clearInterval(statusInterval);
   }, [isTracking, checkAIStatus]);
+  */
 
   // AI 도우미 닫기 핸들러
   const handleAIHelperDismiss = useCallback(() => {
@@ -358,8 +375,16 @@ function App() {
   const handleFaceAnalysis = (data: FaceDetectionData) => {
     // Raw 데이터만 전송, 분석과 판단은 AI 서버에서
     if (data.hasDetection && data.emotions) {
+      const emotions = data.emotions; // TypeScript를 위한 로컬 변수
+      // 얼굴 분석 데이터를 버퍼에 저장
+      setFaceAnalysisBuffer(prev => [...prev, {
+        confusion_probability: emotions.confusion,
+        emotions: emotions,
+        timestamp: Date.now()
+      }].slice(-50)); // 최대 50개 데이터만 유지
+      
       // Raw 감정 점수만 전송
-      sendRawEmotionData(data.emotions);
+      sendRawEmotionData(emotions);
     }
   };
 

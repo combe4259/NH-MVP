@@ -11,12 +11,13 @@ from typing import Optional
 from models.database import get_db_connection, release_db_connection
 from services.eyetrack_service import eyetrack_service
 
-# 얼굴 분석 서비스 import (조건부)
+# 얼굴 분석 서비스 import (CNN-LSTM 버전)
 try:
     from services.face_service import face_service
     FACE_SERVICE_AVAILABLE = True
 except ImportError:
     FACE_SERVICE_AVAILABLE = False
+    face_service = None
 
 # 텍스트 분석 서비스 import (조건부)
 try:
@@ -28,13 +29,20 @@ try:
 except ImportError:
     TEXT_ANALYZER_AVAILABLE = False
 
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
 # Supabase 클라이언트 초기화
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
-router = APIRouter()
-logger = logging.getLogger(__name__)
+# 디버깅: API 키 확인
+if not supabase_key:
+    logger.warning("SUPABASE_SERVICE_KEY가 설정되지 않았습니다")
+else:
+    logger.info(f"Supabase 키 로드됨: {supabase_key[:10]}...")
+
+supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
 # 통합 분석 요청 모델
 class ComprehensiveAnalysisRequest(BaseModel):
@@ -80,13 +88,14 @@ async def analyze_reading(data: ReadingData):
         
         logger.info(f"분석 시작: 상담ID={data.consultation_id}, 섹션={data.current_section}")
         
-        # 아이트래킹 서비스로 분석 수행
+        # 아이트래킹 서비스로 분석 수행 (얼굴 데이터 포함)
         analysis_result = await eyetrack_service.analyze_reading_session(
             consultation_id=data.consultation_id,
             section_name=data.current_section,
             section_text=data.section_text,
             reading_time=data.reading_time,
-            gaze_data=data.gaze_data
+            gaze_data=data.gaze_data,
+            face_data=data.face_analysis  # 프론트엔드에서 받은 얼굴 분석 데이터 전달
         )
         
         # 데이터베이스에 분석 결과 저장 (Supabase API 사용)
@@ -125,11 +134,15 @@ async def analyze_reading(data: ReadingData):
                     
                     if hasattr(result, 'data') and result.data:
                         logger.info(f"분석 결과 Supabase 저장 완료: {data.consultation_id}")
-                        logger.debug(f"저장된 레코드 ID: {result.data[0].get('id')}")
+                        if result.data and len(result.data) > 0:
+                            logger.debug(f"저장된 레코드 ID: {result.data[0].get('id')}")
                     else:
-                        logger.error(f"데이터베이스에 저장되었지만 예상치 못한 응답 형식입니다: {result}")
+                        logger.error(f"Supabase 응답에 data가 없음. 전체 응답: {result}")
                 except Exception as db_error:
-                    logger.error(f"Supabase 저장 중 오류 발생: {str(db_error)}")
+                    logger.error(f"Supabase 저장 중 오류 발생: {db_error}")
+                    # API 키 문제인지 확인
+                    if "No API key" in str(db_error):
+                        logger.error("Supabase API 키가 없거나 잘못되었습니다")
             else:
                 logger.warning("Supabase 클라이언트가 초기화되지 않아 분석 결과를 저장하지 못했습니다.")
                 
@@ -357,7 +370,6 @@ async def get_ai_assistant_status(consultation_id: UUID4):
     """AI 도우미 활성화 상태 조회 (통합 분석 결과 기반)"""
     try:
         # TODO: AI 서버에서 통합 분석 결과를 reading_analysis 테이블에서 조회
-        # 현재는 목업 데이터로 동작
 
         import random
         import time

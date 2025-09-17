@@ -86,6 +86,8 @@ class HuggingFaceModels(AIModelInterface):
         self.simplifier_tokenizer = None
         self.confusion_model = None
         self.confusion_tracker = None
+        self.nl_to_sql_model = None
+        self.nl_to_sql_tokenizer = None
         self._load_models()
         
     def _load_models(self):
@@ -113,6 +115,19 @@ class HuggingFaceModels(AIModelInterface):
                 prediction_interval=1.0
             )
             logger.info("얼굴 혼란도 감지 모델 로드 완료")
+            
+            # NHSQLNL 모델 (자연어 -> SQL 변환)
+            try:
+                from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+                logger.info("NHSQLNL 모델 로딩 시작...")
+                self.nl_to_sql_tokenizer = AutoTokenizer.from_pretrained("combe4259/NHSQLNL")
+                self.nl_to_sql_model = AutoModelForSeq2SeqLM.from_pretrained("combe4259/NHSQLNL")
+                self.nl_to_sql_model.eval()
+                logger.info("NHSQLNL (자연어->SQL) 모델 로드 완료")
+            except Exception as e:
+                logger.error(f"NHSQLNL 모델 로드 실패: {e}")
+                self.nl_to_sql_model = None
+                self.nl_to_sql_tokenizer = None
             
         except Exception as e:
             logger.error(f"HuggingFace 모델 로드 실패: {e}")
@@ -237,6 +252,191 @@ class HuggingFaceModels(AIModelInterface):
                     })
         
         return confused_sections
+    
+    async def convert_nl_to_sql(self, natural_language_query: str, schema_context: str = "") -> str:
+        """자연어를 SQL 쿼리로 변환"""
+        logger.info(f"[HF모델] convert_nl_to_sql 호출됨: {natural_language_query}")
+        
+        if not self.nl_to_sql_model or not self.nl_to_sql_tokenizer:
+            logger.warning(f"[HF모델] NHSQLNL 모델 없음. model:{self.nl_to_sql_model is not None}, tokenizer:{self.nl_to_sql_tokenizer is not None}")
+            return self._generate_fallback_sql(natural_language_query)
+        
+        try:
+            import torch
+            
+            # 학습 시와 동일한 형식으로 입력 (스키마 + 자연어)
+            if not schema_context:
+                # 기본 스키마 (학습 데이터의 스키마)
+                schema_context = "customers: id, name, created_at | consultations: id, customer_id, product_type, product_details, consultation_phase, start_time, end_time, status, created_at, detailed_info | reading_analysis: id, consultation_id, customer_id, section_name, section_text, difficulty_score, confusion_probability, comprehension_level, gaze_data, analysis_timestamp, created_at | consultation_summaries: id, consultation_id, overall_difficulty, confused_sections, total_sections, comprehension_high, comprehension_medium, comprehension_low, recommendations, created_at"
+            
+            # 원래 학습 형식으로 되돌리기
+            simple_schema = "consultations: id, customer_id, product_type, start_time, end_time, status"
+            
+            # Few-shot 예제 하나 추가 (학습 데이터 형식 그대로)
+            example_input = "[SCHEMA: consultations: id, customer_id, product_type, start_time, end_time, status] [UTTERANCE: 내 예금 상담 내역]"
+            example_output = "SELECT * FROM consultations WHERE customer_id = :current_user_id AND product_type = '예금' ORDER BY start_time DESC;"
+            
+            # 현재 쿼리
+            current_input = f"[SCHEMA: {simple_schema}] [UTTERANCE: {natural_language_query}]"
+            
+            # 예제와 현재 입력을 합쳐서 전달
+            input_text = f"{example_input}\n{example_output}\n\n{current_input}"
+            
+            # 토큰화
+            inputs = self.nl_to_sql_tokenizer(
+                input_text,
+                return_tensors="pt",
+                max_length=256,  # 더 짧게
+                truncation=True,
+                padding=True
+            )
+            
+            # SQL 생성 - Few-shot 예제가 포함된 상태로 생성
+            with torch.no_grad():
+                outputs = self.nl_to_sql_model.generate(
+                    **inputs,
+                    max_length=100,
+                    num_beams=3,
+                    do_sample=False,
+                    repetition_penalty=1.3,
+                    no_repeat_ngram_size=3,
+                    early_stopping=True
+                )
+            
+            # 디코딩
+            sql_query = self.nl_to_sql_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            logger.info(f"[AI모델] 입력: {input_text}")
+            logger.info(f"[AI모델] 출력 (원본): {sql_query}")
+            logger.info(f"[AI모델] 출력 길이: {len(sql_query)}")
+            
+            # :current_user_id를 제거 (모든 사용자 데이터 조회)
+            if ":current_user_id" in sql_query:
+                # customer_id 조건만 제거 (다른 WHERE 조건은 유지)
+                sql_query = sql_query.replace("customer_id = :current_user_id AND ", "")
+                sql_query = sql_query.replace(" AND customer_id = :current_user_id", "")
+                sql_query = sql_query.replace("WHERE customer_id = :current_user_id", "WHERE TRUE")
+                sql_query = sql_query.replace("customer_id = :current_user_id", "TRUE")
+            
+            # 모델이 빈 문자열이나 이상한 값을 반환한 경우 처리
+            if len(sql_query) < 10 or "SELECT" not in sql_query.upper():
+                logger.warning(f"[AI모델] 유효하지 않은 SQL: '{sql_query}', 폴백 사용")
+                return self._generate_fallback_sql(natural_language_query)
+            
+            # DESC 같은 잘못된 SELECT 처리
+            if "SELECT DESC" in sql_query.upper():
+                sql_query = sql_query.replace("SELECT DESC", "SELECT *")
+            
+            # 자연어에서 제품 타입 추출하여 WHERE 절 추가 (SQL 정제 전에 처리)
+            if "적금" in natural_language_query and "product_type = '적금'" not in sql_query:
+                if "WHERE" not in sql_query.upper():
+                    sql_query = sql_query.replace("FROM consultations", "FROM consultations WHERE product_type = '적금'")
+                else:
+                    sql_query = sql_query.replace("WHERE TRUE", "WHERE product_type = '적금'")
+                    if "WHERE TRUE" not in sql_query and "product_type" not in sql_query:
+                        sql_query = sql_query + " AND product_type = '적금'"
+            
+            # 예금도 동일하게 처리
+            elif "예금" in natural_language_query and "product_type" not in sql_query:
+                if "WHERE" not in sql_query.upper():
+                    sql_query = sql_query.replace("FROM consultations", "FROM consultations WHERE product_type = '예금'")
+                else:
+                    sql_query = sql_query.replace("WHERE TRUE", "WHERE product_type = '예금'")
+                    if "WHERE TRUE" not in sql_query:
+                        sql_query = sql_query + " AND product_type = '예금'"
+            
+            # 대출도 처리
+            elif "대출" in natural_language_query and "product_type" not in sql_query:
+                if "WHERE" not in sql_query.upper():
+                    sql_query = sql_query.replace("FROM consultations", "FROM consultations WHERE product_type = '대출'")
+                else:
+                    sql_query = sql_query.replace("WHERE TRUE", "WHERE product_type = '대출'")
+                    if "WHERE TRUE" not in sql_query:
+                        sql_query = sql_query + " AND product_type = '대출'"
+            
+            # SQL 정제 (JOIN 추가 등)
+            sql_query = self._refine_sql(sql_query)
+            
+            return sql_query
+            
+        except Exception as e:
+            logger.error(f"NL to SQL 변환 실패: {e}")
+            return self._generate_fallback_sql(natural_language_query)
+    
+    def _refine_sql(self, sql_query: str) -> str:
+        """생성된 SQL 정제 - 고객명 표시를 위해 JOIN 자동 추가"""
+        sql_query = sql_query.strip()
+        
+        # SELECT가 없으면 기본 쿼리 생성
+        if not sql_query.upper().startswith("SELECT"):
+            logger.warning(f"잘못된 SQL 생성됨: {sql_query}")
+            return self._generate_fallback_sql("")
+        
+        # consultations 테이블 조회 시 고객명도 필요하므로 customers 테이블 JOIN
+        if "FROM consultations" in sql_query and "JOIN customers" not in sql_query:
+            # SELECT * 를 구체적인 컬럼으로 변경하고 고객명 추가
+            if "SELECT *" in sql_query:
+                sql_query = sql_query.replace(
+                    "SELECT *",
+                    "SELECT c.*, cu.name as customer_name"
+                )
+            
+            # FROM 절에 JOIN 추가
+            sql_query = sql_query.replace(
+                "FROM consultations",
+                "FROM consultations c JOIN customers cu ON c.customer_id = cu.id"
+            )
+            
+            # WHERE 절의 customer_id도 별칭 적용
+            sql_query = sql_query.replace("WHERE customer_id", "WHERE c.customer_id")
+            sql_query = sql_query.replace("AND customer_id", "AND c.customer_id")
+        
+        return sql_query
+    
+    def _generate_fallback_sql(self, query: str) -> str:
+        """폴백 SQL 생성"""
+        logger.info(f"[폴백SQL] 키워드 기반 SQL 생성 중: {query}")
+        
+        base_sql = """
+        SELECT c.id, c.customer_id, cu.name as customer_name, 
+               c.product_type, c.status, c.start_time, c.end_time
+        FROM consultations c
+        JOIN customers cu ON c.customer_id = cu.id
+        WHERE 1=1
+        """
+        
+        query_lower = query.lower()
+        conditions = []
+        
+        # 날짜 처리
+        if "최근" in query_lower:
+            conditions.append("c.start_time >= CURRENT_DATE - INTERVAL '7 days'")
+        elif "오늘" in query_lower:
+            conditions.append("DATE(c.start_time) = CURRENT_DATE")
+        elif "어제" in query_lower:
+            conditions.append("DATE(c.start_time) = CURRENT_DATE - INTERVAL '1 day'")
+        elif "지난달" in query_lower:
+            conditions.append("DATE_TRUNC('month', c.start_time) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')")
+        
+        # 상품 타입 처리
+        if "적금" in query_lower:
+            conditions.append("c.product_type = '적금'")
+        elif "정기예금" in query_lower or "예금" in query_lower:
+            conditions.append("c.product_type = '정기예금'")
+        elif "펀드" in query_lower:
+            conditions.append("c.product_type = '펀드'")
+        
+        # 상태 처리
+        if "완료" in query_lower:
+            conditions.append("c.status = 'completed'")
+        elif "진행" in query_lower:
+            conditions.append("c.status = 'active'")
+        
+        if conditions:
+            base_sql += " AND " + " AND ".join(conditions)
+        
+        base_sql += " ORDER BY c.start_time DESC LIMIT 20"
+        return base_sql
 
 class OpenAIModel(AIModelInterface):
     """OpenAI API 래퍼"""
