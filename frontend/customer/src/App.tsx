@@ -71,6 +71,7 @@ function App() {
   const [faceAnalysisBuffer, setFaceAnalysisBuffer] = useState<any[]>([]);
   const pdfViewerRef = useRef<HTMLDivElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [pdfTextRegions, setPdfTextRegions] = useState<any[]>([]);
 
 
   const analyzeTextContent = useCallback(async (sectionName: string, sectionText: string) => {
@@ -145,6 +146,7 @@ function App() {
         section_text: sectionText,
         reading_time: readingTime,
         face_analysis: latestFaceData,  // 얼굴 분석 데이터 추가
+        pdf_text_regions: pdfTextRegions,  // PDF 텍스트 영역 정보 추가
         gaze_data: gazeDataBuffer.length > 0 ? {
           raw_points: gazeDataBuffer.slice(-20).map(point => ({
             x: point.screen_x || point.x || 0,
@@ -238,20 +240,26 @@ function App() {
     }
   }, [showAIHelper]);
 
-  // 주기적 AI 분석 및 상태 확인
+  // 실제 시선 데이터가 누적되면 분석 실행
   useEffect(() => {
-    if (!isTracking) return;
+    if (!isTracking || gazeDataBuffer.length < 10) return; // 최소 10개 이상의 시선 데이터가 있을 때만
 
-    // 단순화: 컴포넌트 마운트 시 한 번만 분석 실행
-    const timer = setTimeout(() => {
-      // 기존 아이트래킹 분석
-      sendAnalysisData(currentSection, '상품의 주요 내용에 대한 설명입니다.', 5000);
-      // 텍스트 분석
-      analyzeTextContent(currentSection, '만기 전 중도해지 시 약정한 우대이율은 적용되지 않습니다. 예금자보호법에 따른 보호 한도는 5천만원입니다.');
-    }, 2000);
+    // 5초마다 분석 실행 (서버 부하 감소)
+    const timer = setInterval(() => {
+      if (gazeDataBuffer.length > 0 && pdfTextRegions.length > 0) {
+        // 시선 데이터와 PDF 텍스트가 모두 있을 때만 분석
+        // 백엔드에서 실제 시선 위치의 텍스트를 추출함
+        console.log(`분석 요청 전송: 시선 데이터 ${gazeDataBuffer.length}개, PDF 영역 ${pdfTextRegions.length}개`);
+        sendAnalysisData(
+          'PDF 문서', // 실제 섹션은 백엔드에서 결정
+          '', // 텍스트는 백엔드에서 시선 좌표로 추출
+          5000 // 5초간 읽기
+        );
+      }
+    }, 5000);
 
-    return () => clearTimeout(timer);
-  }, [isTracking, currentSection, sendAnalysisData, analyzeTextContent]);
+    return () => clearInterval(timer);
+  }, [isTracking, gazeDataBuffer.length, pdfTextRegions.length, sendAnalysisData]);
 
   // AI 상태 주기적 확인 비활성화 (목업 데이터 제거)
   // 실제 통합 분석 결과만 사용
@@ -390,54 +398,20 @@ function App() {
 
   // 실제 시선 추적 데이터 처리
   const handleGazeData = useCallback((gazeData: any) => {
-    // PDF 좌표 변환
-    let pdfCoordinate: { x: number; y: number; page: number } | null = null;
-    if (pdfViewerRef.current) {
-      const pdfContainer = pdfViewerRef.current;
-      const containerRect = pdfContainer.getBoundingClientRect();
-
-      // PDF 뷰어 내부인지 확인
-      if (gazeData.x >= containerRect.left && gazeData.x <= containerRect.right &&
-          gazeData.y >= containerRect.top && gazeData.y <= containerRect.bottom) {
-
-        // PDF 페이지 요소 찾기
-        const pdfPage = pdfContainer.querySelector('.rpv-core__page-layer');
-        if (pdfPage) {
-          const pageRect = pdfPage.getBoundingClientRect();
-
-          // PDF 페이지 내 상대 좌표 계산
-          const relativeX = gazeData.x - pageRect.left;
-          const relativeY = gazeData.y - pageRect.top;
-
-          // PDF 페이지 크기 대비 비율로 변환 (0-100%)
-          const percentX = (relativeX / pageRect.width) * 100;
-          const percentY = (relativeY / pageRect.height) * 100;
-
-          if (percentX >= 0 && percentX <= 100 && percentY >= 0 && percentY <= 100) {
-            pdfCoordinate = {
-              x: percentX,
-              y: percentY,
-              page: 1 // 현재는 단일 페이지 가정
-            };
-          }
-        }
-      }
-    }
-
-    // 시선 데이터를 버퍼에 추가 (PDF 좌표 포함)
+    // 시선 데이터를 버퍼에 추가 (스크린 좌표 그대로)
     setGazeDataBuffer(prev => [...prev, {
       screen_x: gazeData.x,
       screen_y: gazeData.y,
-      pdf_coordinate: pdfCoordinate,
-      timestamp: gazeData.timestamp,
-      confidence: gazeData.confidence,
+      timestamp: gazeData.timestamp || Date.now(),
+      confidence: gazeData.confidence || 0.8,
       duration: 200
     }].slice(-100)); // 최대 100개 포인트만 유지
 
-    if (pdfCoordinate) {
-      console.log('PDF 내 시선 추적:', {
+    // 디버깅용 로그
+    if (Math.random() < 0.1) { // 10% 확률로만 로그 출력 (너무 많이 출력되지 않도록)
+      console.log('시선 추적 데이터:', {
         screen: { x: gazeData.x, y: gazeData.y },
-        pdf: pdfCoordinate
+        timestamp: gazeData.timestamp
       });
     }
   }, []);
@@ -528,6 +502,10 @@ function App() {
               highlightedTexts={highlightedTexts}
               difficultSentences={difficultSentences}
               onSentenceClick={handleSentenceClick}
+              onPdfLoaded={(textRegions) => {
+                setPdfTextRegions(textRegions);
+                console.log('PDF 텍스트 영역 로드:', textRegions.length);
+              }}
             />
           </div>
 

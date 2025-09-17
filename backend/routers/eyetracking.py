@@ -79,20 +79,80 @@ async def analyze_reading(data: ReadingData):
     어려워하는 부분에 대한 AI 설명을 제공합니다.
     """
     try:
-        # 입력 데이터 검증
-        if not data.section_text.strip():
-            raise HTTPException(status_code=400, detail="섹션 텍스트가 비어있습니다.")
+        # 입력 데이터 검증 (빈 텍스트 허용 - 시선에서 추출)
+        # if not data.section_text.strip():
+        #     raise HTTPException(status_code=400, detail="섹션 텍스트가 비어있습니다.")
         
         if data.reading_time <= 0:
             raise HTTPException(status_code=400, detail="읽기 시간은 양수여야 합니다.")
         
         logger.info(f"분석 시작: 상담ID={data.consultation_id}, 섹션={data.current_section}")
         
-        # 아이트래킹 서비스로 분석 수행 (얼굴 데이터 포함)
+        # PDF 텍스트 영역이 있으면 시선 데이터와 매핑
+        actual_text = data.section_text if data.section_text else ""
+        
+        # 텍스트가 비어있거나 PDF 텍스트 영역이 있으면 시선에서 추출
+        if (not actual_text or data.pdf_text_regions) and data.gaze_data and 'raw_points' in data.gaze_data:
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
+                from pdf_coordinate_mapper import PDFCoordinateMapper
+                
+                # PDF 텍스트 영역 정보 로깅
+                logger.info(f"PDF 텍스트 영역 수신: {len(data.pdf_text_regions) if data.pdf_text_regions else 0}개")
+                logger.info(f"시선 포인트 수신: {len(data.gaze_data.get('raw_points', []))}개")
+                
+                # 매퍼 초기화 및 텍스트 영역 로드
+                mapper = PDFCoordinateMapper()
+                if data.pdf_text_regions:
+                    mapper.load_pdf_text_regions(data.pdf_text_regions)
+                    logger.info(f"PDF 매퍼에 {len(mapper.text_regions.get(1, []))}개 텍스트 영역 로드됨")
+                else:
+                    logger.warning("PDF 텍스트 영역이 없음")
+                
+                # 마지막 시선 포인트에서 텍스트 추출
+                if data.gaze_data['raw_points']:
+                    last_point = data.gaze_data['raw_points'][-1]
+                    logger.info(f"시선 좌표: x={last_point['x']}, y={last_point['y']}")
+                    
+                    # 첫 번째 텍스트 영역의 좌표 확인 (디버깅)
+                    if mapper.text_regions.get(1):
+                        first_region = mapper.text_regions[1][0]
+                        logger.info(f"첫 텍스트 영역 범위: {first_region.bbox}, 텍스트: {first_region.text[:20]}...")
+                    
+                    text_match = mapper.map_gaze_to_text(
+                        last_point['x'], 
+                        last_point['y'],
+                        1,  # 현재 페이지
+                        last_point.get('timestamp', 0)
+                    )
+                    if text_match:
+                        actual_text = text_match.matched_text
+                        logger.info(f"✅ 시선 위치 텍스트 매칭 성공: {actual_text[:50]}...")
+                    else:
+                        logger.warning(f"⚠️ 시선 좌표({last_point['x']}, {last_point['y']})에서 텍스트 매칭 실패")
+                        # 가장 가까운 텍스트 영역 찾기 (디버깅용)
+                        if mapper.text_regions.get(1):
+                            import math
+                            min_dist = float('inf')
+                            closest_text = ""
+                            for region in mapper.text_regions[1][:5]:  # 처음 5개만 확인
+                                center_x = (region.bbox[0] + region.bbox[2]) / 2
+                                center_y = (region.bbox[1] + region.bbox[3]) / 2
+                                dist = math.sqrt((last_point['x'] - center_x)**2 + (last_point['y'] - center_y)**2)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    closest_text = region.text
+                            logger.info(f"가장 가까운 텍스트(거리: {min_dist:.1f}): {closest_text[:30]}...")
+            except Exception as e:
+                logger.error(f"텍스트 매핑 실패: {e}", exc_info=True)
+        
+        # 아이트래킹 서비스로 분석 수행 (추출된 텍스트 사용)
         analysis_result = await eyetrack_service.analyze_reading_session(
             consultation_id=data.consultation_id,
             section_name=data.current_section,
-            section_text=data.section_text,
+            section_text=actual_text,  # 시선 위치의 실제 텍스트
             reading_time=data.reading_time,
             gaze_data=data.gaze_data,
             face_data=data.face_analysis  # 프론트엔드에서 받은 얼굴 분석 데이터 전달

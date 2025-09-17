@@ -67,23 +67,37 @@ class PDFCoordinateMapper:
 
     def map_gaze_to_text(self, gaze_x: float, gaze_y: float,
                         current_page: int = 1, timestamp: float = None) -> Optional[GazeTextMatch]:
-        """시선 좌표를 PDF 텍스트에 매핑"""
+        """시선 좌표를 PDF 텍스트에 매핑 (스크린 좌표 사용)"""
         if current_page not in self.text_regions:
             return None
 
-        # 뷰포트 좌표를 PDF 좌표로 변환
-        pdf_x = (gaze_x - self.viewport_offset[0]) / self.scale_factor
-        pdf_y = (gaze_y - self.viewport_offset[1]) / self.scale_factor
-
+        # 스크린 좌표를 그대로 사용 (프론트엔드에서 스크린 좌표로 전송)
         best_match = None
         min_distance = float('inf')
 
         for region in self.text_regions[current_page]:
-            # 텍스트 영역의 중심점과 거리 계산
-            region_center_x = (region.bbox[0] + region.bbox[2]) / 2
-            region_center_y = (region.bbox[1] + region.bbox[3]) / 2
-
-            distance = np.sqrt((pdf_x - region_center_x)**2 + (pdf_y - region_center_y)**2)
+            # 텍스트 영역의 경계 확인 (bbox가 스크린 좌표)
+            x1, y1, x2, y2 = region.bbox
+            
+            # 시선이 텍스트 영역 내부에 있는지 확인
+            if x1 <= gaze_x <= x2 and y1 <= gaze_y <= y2:
+                # 영역 내부에 있으면 바로 매칭
+                best_match = GazeTextMatch(
+                    gaze_x=gaze_x,
+                    gaze_y=gaze_y,
+                    matched_text=region.text,
+                    text_region=region,
+                    distance=0,
+                    confidence=1.0,
+                    timestamp=timestamp or 0
+                )
+                return best_match
+            
+            # 영역 외부인 경우 중심점과 거리 계산
+            region_center_x = (x1 + x2) / 2
+            region_center_y = (y1 + y2) / 2
+            
+            distance = np.sqrt((gaze_x - region_center_x)**2 + (gaze_y - region_center_y)**2)
 
             # 허용 오차 내에서 가장 가까운 텍스트 찾기
             if distance <= self.tolerance_pixels and distance < min_distance:

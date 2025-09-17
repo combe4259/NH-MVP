@@ -176,12 +176,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
         }
         
         // FaceMesh 초기화 - window 객체에서 직접 사용
-        const faceMesh = new window.FaceMesh({
-          locateFile: (file: string) => {
-            console.log('MediaPipe requesting file:', file);
-            return `/mediapipe/face_mesh/${file}`;
-          }
-        });
+        const faceMesh = new window.FaceMesh();
 
         // 옵션 설정 전 대기
         await new Promise(resolve => setTimeout(resolve, 100));

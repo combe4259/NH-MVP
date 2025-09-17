@@ -28,36 +28,15 @@
     <script>
       // MediaPipe가 필요로 하는 Module 객체 초기화
       window.Module = {
-        locateFile: function(path) {
-          return '/mediapipe/face_mesh/' + path;
+        locateFile: (path) => {
+          return `/mediapipe/face_mesh/${path}`;
         },
-        // 파일 다운로드 추적용
-        dataFileDownloads: {},
-        expectedDataFileDownloads: 0,
-        
-        // 파일 시스템 함수들
-        FS_createPreloadedFile: function(parent, name, url, canRead, canWrite, onload, onerror) {
-          console.log('FS_createPreloadedFile:', name);
-          if (onload) onload();
-        },
-        
-        setStatus: function(text) {
-          console.log('MediaPipe:', text);
-        },
-        
-        onRuntimeInitialized: function() {
-          console.log('MediaPipe Runtime Initialized');
-          window.MediaPipeReady = true;
-        }
       };
-      
-      // Module을 전역 변수로도 설정 (MediaPipe 로더가 찾을 수 있도록)
-      var Module = window.Module;
     </script>
     
     <!-- MediaPipe 로컬 파일 로드 -->
-    <script src="/mediapipe/face_mesh/face_mesh.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="/mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="/mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

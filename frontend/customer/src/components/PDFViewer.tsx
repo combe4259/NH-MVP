@@ -42,9 +42,10 @@ interface PDFViewerProps {
     difficultSentences?: DifficultSentence[];
     onTextSelect?: (text: string) => void;
     onSentenceClick?: (sentence: DifficultSentence) => void;
+    onPdfLoaded?: (textRegions: any[]) => void;
 }
 
-const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], difficultSentences = [], onTextSelect, onSentenceClick }) => {
+const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], difficultSentences = [], onTextSelect, onSentenceClick, onPdfLoaded }) => {
     const [showPopup, setShowPopup] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
     const [currentExplanation, setCurrentExplanation] = useState('');
@@ -52,6 +53,51 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
     const [pdfLoaded, setPdfLoaded] = useState(false);
 
     const viewerContainerRef = useRef<HTMLDivElement>(null);
+    
+    // PDF 로드 시 텍스트 영역 추출
+    useEffect(() => {
+        if (pdfLoaded && viewerContainerRef.current && onPdfLoaded) {
+            // PDF.js 텍스트 레이어에서 텍스트 영역 추출
+            const extractTextRegions = () => {
+                const textLayers = viewerContainerRef.current?.querySelectorAll('.rpv-core__text-layer');
+                const textRegions: any[] = [];
+                
+                // PDF 뷰어 컨테이너의 위치 (스크린 좌표)
+                const containerRect = viewerContainerRef.current?.getBoundingClientRect();
+                if (!containerRect) return;
+                
+                textLayers?.forEach((layer, pageIndex) => {
+                    const textSpans = layer.querySelectorAll('span');
+                    textSpans.forEach(span => {
+                        const rect = span.getBoundingClientRect();
+                        const text = span.textContent?.trim();
+                        
+                        if (text && text.length > 0) {
+                            // 스크린 좌표 그대로 저장
+                            textRegions.push({
+                                text: text,
+                                page: pageIndex + 1,
+                                bbox: [rect.left, rect.top, rect.right, rect.bottom],
+                                x: rect.left,
+                                y: rect.top,
+                                width: rect.width,
+                                height: rect.height
+                            });
+                        }
+                    });
+                });
+                
+                if (textRegions.length > 0) {
+                    console.log(`PDF 텍스트 영역 추출 완료: ${textRegions.length}개`);
+                    console.log('첫 번째 텍스트 영역:', textRegions[0]);
+                    onPdfLoaded(textRegions);
+                }
+            };
+            
+            // PDF 렌더링 완료 후 텍스트 추출
+            setTimeout(extractTextRegions, 500);
+        }
+    }, [pdfLoaded, onPdfLoaded]);
 
     const defaultLayoutPluginInstance = defaultLayoutPlugin();
 
