@@ -36,9 +36,11 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
 
   // 웹캠 시작
   const startWebcam = async () => {
+    console.log('🎥 웹캠 시작 시도...');
     try {
       // 브라우저 지원 확인
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('❌ 브라우저가 웹캠을 지원하지 않음');
         throw new Error('브라우저가 웹캠을 지원하지 않습니다');
       }
 
@@ -63,6 +65,7 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
         setStream(mediaStream);
         setIsWebcamActive(true);
         setError('');
+        console.log('✅ 웹캠 연결 성공!');
       }
     } catch (err: any) {
       console.error('웹캠 접근 실패:', err);
@@ -146,9 +149,15 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
     if (frameBufferRef.current.length > frameBufferSize) {
       frameBufferRef.current.shift();
     }
+    
+    // 프레임 수집 상태 로깅 (가끔씩만)
+    if (frameBufferRef.current.length % 10 === 0) {
+      console.log(`📹 프레임 수집 중: ${frameBufferRef.current.length}/${frameBufferSize}`);
+    }
 
     // 30프레임이 모이면 백엔드로 전송
     if (frameBufferRef.current.length === frameBufferSize) {
+      console.log('📤 30프레임 시퀀스 백엔드 전송 시작...');
       await sendFramesToBackend();
     }
 
@@ -187,6 +196,10 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
 
       if (response.ok) {
         const result = await response.json();
+        console.log('🧠 CNN-LSTM 얼굴 분석 결과:', {
+          confusion: result.confusion_probability?.toFixed(2),
+          timestamp: new Date().toLocaleTimeString()
+        });
         
         // confusion 레벨만 사용 (0-3 -> 0-1 정규화)
         const confusionLevel = result.confusion || 0;

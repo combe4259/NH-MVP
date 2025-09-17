@@ -305,10 +305,12 @@ class EyeTrackingService:
             # 6. 어려운 문장 추출
             confused_sentences = [cs.get('sentence_index', i) for i, cs in enumerate(confused_sections)]
             
-            # 6. 추천사항 생성
-            recommendations = self._generate_recommendations(
-                confusion_probability, difficulty_score, reading_time
-            )
+            # 6. 추천사항 생성 (필요시)
+            recommendations = []
+            if comprehension_level == "low":
+                recommendations.append("텍스트가 어려워 보입니다. AI 도우미가 간소화해드립니다.")
+            elif comprehension_level == "medium":
+                recommendations.append("이해에 도움이 필요하시면 AI 도우미를 활용하세요.")
             
             # 7. 세션 데이터 업데이트
             if consultation_id not in self.session_data:
