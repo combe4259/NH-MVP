@@ -21,9 +21,21 @@ interface GazeData {
   confidence: number; 
 }
 
+interface FaceDetectionData {
+  hasDetection: boolean;
+  confidence: number;
+  emotions?: {
+    engagement: number;
+    confusion: number;
+    frustration: number;
+    boredom: number;
+  };
+}
+
 interface EyeTrackerProps {
   isTracking: boolean;
   onGazeData?: (data: GazeData) => void;
+  onFaceAnalysis?: (data: FaceDetectionData) => void;
 }
 
 const loadScript = (src: string): Promise<void> => {
@@ -36,7 +48,7 @@ const loadScript = (src: string): Promise<void> => {
   });
 };
 
-const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
+const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceAnalysis }) => {
   const [gazePosition, setGazePosition] = useState<{ x: number; y: number } | null>(null);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [calibrationPoints, setCalibrationPoints] = useState<number>(0);
@@ -48,10 +60,18 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceMeshRef = useRef<FaceMesh | null>(null);
   const cameraRef = useRef<Camera | null>(null);
+  
+  // CNN-LSTM을 위한 프레임 버퍼 (30프레임 시퀀스)
+  const frameBufferRef = useRef<ImageData[]>([]);
+  const frameBufferSize = 30; // CNN-LSTM sequence length
+  const frameInterval = 200; // 200ms마다 프레임 캡처 (5fps)
+  const lastFrameCaptureRef = useRef<number>(0);
 
   // MediaPipe 얼굴 랜드마크 인덱스 (gaze_tracker.py와 동일)
   const LEFT_EYE_INDICES = [33, 160, 158, 133, 153, 144];
   const RIGHT_EYE_INDICES = [362, 385, 387, 263, 373, 380];
+  // 홍채 인덱스는 468-477이 아니라 다른 범위일 수 있음
+  // 일단 눈 중심으로 간단히 시선 추적
   const LEFT_IRIS_INDICES = [468, 469, 470, 471, 472];
   const RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477];
 
@@ -87,42 +107,52 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
     return { x: centerX, y: centerY };
   }, []);
 
-  // 시선 방향 계산 (gaze_tracker.py 알고리즘)
+  // 시선 방향 계산 (간단한 버전)
   const calculateGazeDirection = useCallback((landmarks: any[], frameWidth: number, frameHeight: number) => {
-    const leftEyeCenter = getEyeCenter(landmarks, LEFT_EYE_INDICES, frameWidth, frameHeight);
-    const rightEyeCenter = getEyeCenter(landmarks, RIGHT_EYE_INDICES, frameWidth, frameHeight);
-
-    const leftIris = getIrisPosition(landmarks, LEFT_IRIS_INDICES, frameWidth, frameHeight);
-    const rightIris = getIrisPosition(landmarks, RIGHT_IRIS_INDICES, frameWidth, frameHeight);
-
-    // 시선 벡터 계산
-    const leftGazeVector = {
-      x: leftIris.x - leftEyeCenter.x,
-      y: leftIris.y - leftEyeCenter.y
-    };
-
-    const rightGazeVector = {
-      x: rightIris.x - rightEyeCenter.x,
-      y: rightIris.y - rightEyeCenter.y
-    };
-
-    // 평균 시선 벡터
-    const avgGazeVector = {
-      x: (leftGazeVector.x + rightGazeVector.x) / 2,
-      y: (leftGazeVector.y + rightGazeVector.y) / 2
-    };
-
-    // 코 위치 기준 (gaze_tracker.py와 동일)
+    if (!landmarks || landmarks.length === 0) {
+      console.log('❌ 랜드마크 없음');
+      return null;
+    }
+    
+    // 홍채가 없을 수 있으니 일단 코 위치를 시선으로 사용
     const noseTip = landmarks[1];
+    if (!noseTip) {
+      console.log('❌ 코 랜드마크 없음');
+      return null;
+    }
+    
     const noseX = noseTip.x * frameWidth;
     const noseY = noseTip.y * frameHeight;
+    
+    // 왼쪽 눈과 오른쪽 눈 중심 계산
+    const leftEyeCenter = getEyeCenter(landmarks, LEFT_EYE_INDICES, frameWidth, frameHeight);
+    const rightEyeCenter = getEyeCenter(landmarks, RIGHT_EYE_INDICES, frameWidth, frameHeight);
+    
+    // 눈 중심을 기준으로 간단한 시선 추정
+    const eyeCenterX = (leftEyeCenter.x + rightEyeCenter.x) / 2;
+    const eyeCenterY = (leftEyeCenter.y + rightEyeCenter.y) / 2;
+    
+    // 머리 방향을 고려한 시선 위치 (간단한 추정)
+    const gazeX = noseX + (noseX - eyeCenterX) * 2;
+    const gazeY = noseY + (noseY - eyeCenterY) * 2;
+    
+    console.log('👀 시선 계산:', {
+      nose: { x: noseX, y: noseY },
+      eyeCenter: { x: eyeCenterX, y: eyeCenterY },
+      gaze: { x: gazeX, y: gazeY }
+    });
 
-    // 화면 좌표로 변환 (스케일링 팩터 적용)
-    const screenX = Math.max(0, Math.min(frameWidth, noseX - avgGazeVector.x * 150));
-    const screenY = Math.max(0, Math.min(frameHeight, noseY + avgGazeVector.y * 80));
+    return { 
+      x: Math.max(0, Math.min(frameWidth, gazeX)), 
+      y: Math.max(0, Math.min(frameHeight, gazeY))
+    };
+  }, [getEyeCenter]);
 
-    return { x: screenX, y: screenY };
-  }, [getEyeCenter, getIrisPosition]);
+  // calibrationComplete를 ref로 관리하여 최신 값 참조
+  const calibrationCompleteRef = useRef(false);
+  useEffect(() => {
+    calibrationCompleteRef.current = calibrationComplete;
+  }, [calibrationComplete]);
 
   // MediaPipe 결과 처리
   const onResults = useCallback((results: any) => {
@@ -140,22 +170,63 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
 
     // 비디오 프레임 그리기
     ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
+    
+    // CNN-LSTM을 위한 프레임 캡처 (200ms 간격)
+    const now = Date.now();
+    if (now - lastFrameCaptureRef.current >= frameInterval && onFaceAnalysis) {
+      lastFrameCaptureRef.current = now;
+      captureFrameForCNN(videoRef.current);
+    }
 
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       const landmarks = results.multiFaceLandmarks[0];
+      
+      // 랜드마크 확인 (10프레임마다만 로그)
+      if (Math.random() < 0.05) {
+        console.log('🔍 랜드마크 체크:', {
+          총개수: landmarks.length,
+          첫번째_랜드마크: landmarks[0],
+          홍채_존재: landmarks[468] ? '있음' : '없음',
+          캘리브레이션: calibrationCompleteRef.current
+        });
+      }
 
       // 시선 좌표 계산
       const gazeCoords = calculateGazeDirection(landmarks, videoWidth, videoHeight);
+      
+      // 디버그 로그 추가
+      if (calibrationCompleteRef.current) {
+        console.log('📍 캘리브레이션 완료 상태, gazeCoords:', gazeCoords);
+      }
 
-      if (calibrationComplete && gazeCoords) {
+      if (calibrationCompleteRef.current && gazeCoords) {
+        // 캔버스가 화면 왼쪽 아래 작은 창에 있음 (160x120)
+        // 시선 좌표를 전체 화면 기준으로 변환
+        
+        // 비디오 좌표를 화면 비율로 변환
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        
+        // 시선 위치를 화면 크기에 맞게 스케일링
+        // 머리 위치를 중앙으로 가정하고 시선 방향을 확대
+        const screenX = (gazeCoords.x / videoWidth) * screenWidth;
+        const screenY = (gazeCoords.y / videoHeight) * screenHeight;
+        
         const gazeData: GazeData = {
-          x: gazeCoords.x,
-          y: gazeCoords.y,
+          x: screenX,
+          y: screenY,
           timestamp: Date.now(),
           confidence: 0.8
         };
 
         setGazePosition(gazeCoords);
+        
+        console.log('👁️ 시선 데이터 전송:', {
+          canvasCoords: gazeCoords,
+          screenCoords: { x: screenX, y: screenY },
+          videoSize: { w: videoWidth, h: videoHeight },
+          screenSize: { w: screenWidth, h: screenHeight }
+        });
 
         if (onGazeData) {
           onGazeData(gazeData);
@@ -168,7 +239,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
         ctx.fill();
       }
     }
-  }, [calculateGazeDirection, calibrationComplete, onGazeData]);
+  }, [calculateGazeDirection, onGazeData, onFaceAnalysis]);
 
   // MediaPipe 초기화
   useEffect(() => {
@@ -259,18 +330,23 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
         faceMeshRef.current.close();
         faceMeshRef.current = null;
       }
+      // 캘리브레이션 상태는 유지
     };
   }, [isTracking]);
 
   // 캘리브레이션 시작
+  const calibrationStartedRef = useRef(false);
+  
   useEffect(() => {
     console.log('🎮 캘리브레이션 체크:', {
       isTracking,
       isMediaPipeLoaded,
-      calibrationComplete
+      calibrationComplete,
+      calibrationStarted: calibrationStartedRef.current
     });
-    if (isTracking && isMediaPipeLoaded && !calibrationComplete) {
+    if (isTracking && isMediaPipeLoaded && !calibrationComplete && !calibrationStartedRef.current) {
       console.log('🚀 캘리브레이션 시작!');
+      calibrationStartedRef.current = true;
       startCalibration();
     }
   }, [isTracking, isMediaPipeLoaded, calibrationComplete]);
@@ -301,6 +377,101 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData }) => {
     showCalibrationPoint();
   };
 
+  // CNN-LSTM을 위한 프레임 캡처 함수
+  const captureFrameForCNN = useCallback((video: HTMLVideoElement) => {
+    // 112x112 캔버스 생성 (CNN 입력 크기)
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 112;
+    tempCanvas.height = 112;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    if (!tempCtx) return;
+    
+    // 비디오를 112x112로 리사이즈
+    tempCtx.drawImage(video, 0, 0, 112, 112);
+    const imageData = tempCtx.getImageData(0, 0, 112, 112);
+    
+    // 프레임 버퍼에 추가
+    frameBufferRef.current.push(imageData);
+    
+    // 버퍼 크기 유지 (최대 30프레임)
+    if (frameBufferRef.current.length > frameBufferSize) {
+      frameBufferRef.current.shift();
+    }
+    
+    // 프레임 수집 상태 로깅
+    if (frameBufferRef.current.length % 10 === 0) {
+      console.log(`📹 CNN-LSTM 프레임 수집: ${frameBufferRef.current.length}/${frameBufferSize}`);
+    }
+    
+    // 30프레임이 모이면 백엔드로 전송
+    if (frameBufferRef.current.length === frameBufferSize) {
+      console.log('📤 30프레임 시퀀스 백엔드 전송...');
+      sendFramesToBackend();
+    }
+  }, [onFaceAnalysis]);
+  
+  // 프레임 시퀀스를 백엔드로 전송
+  const sendFramesToBackend = useCallback(async () => {
+    if (!onFaceAnalysis) return;
+    
+    try {
+      // 프레임 데이터를 Base64로 변환
+      const frames = frameBufferRef.current.map(imageData => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 112;
+        canvas.height = 112;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.putImageData(imageData, 0, 0);
+          return canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+        }
+        return '';
+      }).filter(frame => frame !== '');
+      
+      // 백엔드 AI 서비스 호출
+      const response = await fetch('http://localhost:8000/api/face/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          frames: frames,
+          sequence_length: frameBufferSize
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🧠 CNN-LSTM 얼굴 분석 결과:', {
+          confusion: result.confusion_probability?.toFixed(2),
+          timestamp: new Date().toLocaleTimeString()
+        });
+        
+        const confusionLevel = result.confusion || 0;
+        const normalizedConfusion = confusionLevel / 3.0;
+        
+        const faceData: FaceDetectionData = {
+          hasDetection: true,
+          confidence: result.confidence || 0.9,
+          emotions: {
+            engagement: 0,
+            confusion: normalizedConfusion,
+            frustration: 0,
+            boredom: 0
+          }
+        };
+        
+        onFaceAnalysis(faceData);
+      }
+    } catch (error) {
+      console.error('CNN-LSTM 프레임 분석 실패:', error);
+    }
+    
+    // 버퍼 초기화 (다음 시퀀스를 위해)
+    frameBufferRef.current = [];
+  }, [onFaceAnalysis]);
+  
   const finishCalibration = async () => {
     if (!faceMeshRef.current) {
       console.error('❌ faceMeshRef.current가 없어서 캘리브레이션 완료 불가');

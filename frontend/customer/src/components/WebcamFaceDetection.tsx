@@ -15,11 +15,13 @@ interface FaceDetectionData {
 interface WebcamFaceDetectionProps {
   onFaceAnalysis: (data: FaceDetectionData) => void;
   isActive: boolean;
+  useExistingStream?: boolean;  // 기존 카메라 스트림 사용 여부
 }
 
 const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
   onFaceAnalysis,
-  isActive
+  isActive,
+  useExistingStream = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -280,16 +282,55 @@ const WebcamFaceDetection: React.FC<WebcamFaceDetectionProps> = ({
 
   // 컴포넌트 마운트/언마운트 시 웹캠 관리
   useEffect(() => {
-    if (isActive) {
+    if (isActive && !useExistingStream) {
+      // 새 카메라 스트림 생성
       startWebcam();
-    } else {
+    } else if (isActive && useExistingStream) {
+      // 기존 스트림 사용 - EyeTracker의 비디오 공유
+      console.log('🎥 WebcamFaceDetection: 기존 카메라 스트림 사용 모드');
+      setIsWebcamActive(true);
+      
+      // EyeTracker의 비디오 찾아서 프레임 캡처
+      let attempts = 0;
+      const maxAttempts = 20;
+      
+      const findAndUseExistingVideo = () => {
+        attempts++;
+        const eyeTrackerVideo = document.querySelector('.webcam-video') as HTMLVideoElement;
+        
+        console.log(`🔍 비디오 찾기 시도 ${attempts}/${maxAttempts}:`, {
+          videoFound: !!eyeTrackerVideo,
+          hasSrcObject: eyeTrackerVideo?.srcObject ? true : false,
+          readyState: eyeTrackerVideo?.readyState
+        });
+        
+        if (eyeTrackerVideo && eyeTrackerVideo.srcObject && eyeTrackerVideo.readyState >= 2) {
+          console.log('✅ CNN-LSTM용 비디오 스트림 공유 성공!');
+          // 동일한 스트림을 참조
+          if (videoRef.current) {
+            videoRef.current.srcObject = eyeTrackerVideo.srcObject;
+            console.log('✅ 프레임 캡처 준비 완료');
+          }
+        } else if (attempts < maxAttempts) {
+          console.log(`⏳ EyeTracker 비디오 대기 중... (${attempts}/${maxAttempts})`);
+          setTimeout(findAndUseExistingVideo, 1000);
+        } else {
+          console.error('❌ EyeTracker 비디오를 찾을 수 없습니다');
+        }
+      };
+      
+      // 초기 대기 시간을 늘림
+      setTimeout(findAndUseExistingVideo, 2000);
+    } else if (!isActive) {
       stopWebcam();
     }
 
     return () => {
-      stopWebcam();
+      if (!useExistingStream) {
+        stopWebcam();
+      }
     };
-  }, [isActive]);
+  }, [isActive, useExistingStream]);
 
   return (
     <div className="webcam-face-detection">

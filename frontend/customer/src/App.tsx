@@ -3,7 +3,6 @@ import axios from 'axios';
 import './App.css';
 import AIAssistant from './components/AIAssistant';
 import PDFViewer from './components/PDFViewer';
-import WebcamFaceDetection from './components/WebcamFaceDetection';
 import EyeTracker from './components/EyeTracker';
 
 const API_BASE_URL = 'http://localhost:8000/api';
@@ -444,19 +443,11 @@ function App() {
         style={{ display: 'none' }}
       />
       
-      {/* 임시로 WebcamFaceDetection 비활성화 - 카메라 충돌 방지 */}
-      {false && (
-        <div style={{ display: 'none' }}>
-          <WebcamFaceDetection
-            isActive={isTracking}
-            onFaceAnalysis={handleFaceAnalysis}
-          />
-        </div>
-      )}
-
+      {/* EyeTracker가 시선 추적과 얼굴 분석을 모두 처리 */}
       <EyeTracker
         isTracking={isTracking}
         onGazeData={handleGazeData}
+        onFaceAnalysis={handleFaceAnalysis}
       />
 
 
