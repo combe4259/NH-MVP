@@ -60,7 +60,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
       {!isExpanded && (
         <div className="ai-bubble" onClick={() => setIsExpanded(true)}>
           <div className="ai-avatar">
-            <span className="ai-icon">🤖</span>
+            <span className="ai-icon"></span>
           </div>
           <div className="ai-message">
             <p className="ai-greeting">이 부분이 어려우신가요?</p>
@@ -103,7 +103,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               <div className="example-section">
                 <span className="label">실생활 예시</span>
                 <div className="example-box">
-                  <span className="example-icon">💡</span>
+                  <span className="example-icon"></span>
                   <p>{suggestion.simpleExample}</p>
                 </div>
               </div>

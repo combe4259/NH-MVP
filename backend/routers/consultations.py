@@ -177,7 +177,7 @@ async def get_consultation_report(consultation_id: UUID4):
             detailed_info = json.loads(consultation['detailed_info'])
 
         return ConsultationReportResponse(
-            consultation_id=consultation_id,
+            consultation_id=str(consultation_id),
             customer_name=consultation['customer_name'],
             product_type=consultation['product_type'],
             product_details=json.loads(consultation['product_details']),

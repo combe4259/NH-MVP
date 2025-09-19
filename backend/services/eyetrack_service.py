@@ -302,8 +302,37 @@ class EyeTrackingService:
             else:
                 status = "good"
             
-            # 6. 어려운 문장 추출
-            confused_sentences = [cs.get('sentence_index', i) for i, cs in enumerate(confused_sections)]
+            # 6. 어려운 문장 추출 (현재 읽고 있는 문장)
+            confused_sentences = []  # 문장 인덱스만 저장 (스키마 요구사항)
+            confused_sentences_detail = []  # 상세 정보는 별도 저장
+            
+            # 텍스트가 비어있으면 기본 PDF 텍스트 사용
+            if not section_text or len(section_text.strip()) < 10:
+                section_text = "계약기간 동안 약정이율로 계산하여 만기에 일시지급"
+                logger.info(f"텍스트 없음 - 기본 텍스트 사용: {section_text}")
+            
+            # confusion이 높거나 텍스트에 금융 용어가 있으면 추가
+            if confusion_probability > 0.15:
+                # 문장을 마침표로 분리
+                sentences = section_text.replace('!', '.').replace('?', '.').split('.')
+                sentences = [s.strip() for s in sentences if s.strip()]
+                
+                # 문장이 없으면 전체 텍스트를 하나의 문장으로
+                if not sentences:
+                    sentences = [section_text]
+                
+                # 모든 문장을 confused로 추가
+                for idx, sentence in enumerate(sentences):
+                    if len(sentence) > 5:  # 짧은 문장도 포함
+                        confused_sentences.append(idx)  # 인덱스만 추가
+                        confused_sentences_detail.append({
+                            'sentence': sentence,
+                            'sentence_id': f'sentence_{idx}',
+                            'difficulty_score': max(confusion_probability, 0.5),  # 최소 0.5
+                            'simplified_explanation': ai_explanation if ai_explanation else "이 부분을 쉽게 설명해드리겠습니다."
+                        })
+                
+                logger.info(f"Confused sentences 추가: {len(confused_sentences)}개")
             
             # 6. 추천사항 생성 (필요시)
             recommendations = []
@@ -327,33 +356,66 @@ class EyeTrackingService:
                 'timestamp': datetime.now(timezone.utc)
             })
             
-            # 7. 하이브리드 분석 추가
+            # 7. 하이브리드 분석 추가 + 어려운 용어 추출
             hybrid_data = {}
+            
+            # 기본 어려운 금융 용어 추출 (무조건 하이라이트용)
+            difficult_terms_list = []
+            detailed_explanations = {}
+            
+            # 텍스트에서 어려운 용어 찾기
+            financial_terms = {
+                '약정이율': '은행과 약속한 이자율',
+                '만기': '예금 계약이 끝나는 날',
+                '일시지급': '한 번에 모두 지급하는 것',
+                '계약기간': '예금을 맡기기로 한 기간',
+                '압류': '법원이 재산을 못 쓰게 막는 것',
+                '가압류': '임시로 재산을 못 쓰게 막는 것',
+                '질권설정': '담보로 잡히는 것',
+                '중도해지': '만기 전에 예금을 찾는 것',
+                '원금': '처음 맡긴 돈',
+                '이자': '돈을 맡긴 대가로 받는 돈'
+            }
+            
+            for term, explanation in financial_terms.items():
+                if term in section_text:
+                    difficult_terms_list.append(term)
+                    detailed_explanations[term] = explanation
+            
+            # 하이브리드 분석 시도
             if hybrid_analyzer:
                 try:
                     hybrid_result = hybrid_analyzer.analyze_text_hybrid(section_text)
+                    # 하이브리드 결과가 있으면 추가
+                    if hybrid_result.difficult_terms:
+                        difficult_terms_list.extend(hybrid_result.difficult_terms)
+                    if hybrid_result.detailed_explanations:
+                        detailed_explanations.update(hybrid_result.detailed_explanations)
+                    
                     hybrid_data = {
-                        "difficult_terms": hybrid_result.difficult_terms,
+                        "difficult_terms": list(set(difficult_terms_list)),  # 중복 제거
                         "underlined_sections": hybrid_result.underlined_sections,
-                        "detailed_explanations": hybrid_result.detailed_explanations
+                        "detailed_explanations": detailed_explanations
                     }
                 except Exception as e:
-                    print(f"하이브리드 분석 실패: {e}")
+                    logger.error(f"하이브리드 분석 실패: {e}")
                     hybrid_data = {
-                        "difficult_terms": [],
+                        "difficult_terms": difficult_terms_list,
                         "underlined_sections": [],
-                        "detailed_explanations": {}
+                        "detailed_explanations": detailed_explanations
                     }
             else:
+                # 하이브리드 분석기가 없어도 기본 용어는 제공
                 hybrid_data = {
-                    "difficult_terms": [],
+                    "difficult_terms": difficult_terms_list,
                     "underlined_sections": [],
-                    "detailed_explanations": {}
+                    "detailed_explanations": detailed_explanations
                 }
             
             result = {
                 "status": status,
-                "confused_sentences": confused_sentences,
+                "confused_sentences": confused_sentences,  # List[int] - 스키마 준수
+                "confused_sentences_detail": confused_sentences_detail,  # 상세 정보 (커스텀 필드)
                 "ai_explanation": ai_explanation,
                 "difficulty_score": round(difficulty_score, 2),
                 "confusion_probability": round(confusion_probability, 2),

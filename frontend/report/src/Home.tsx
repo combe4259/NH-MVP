@@ -200,14 +200,14 @@ const Home: React.FC = () => {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3 flex-1">
-                      <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
                         <span className="text-white text-lg">{consultation.type}</span>
                       </div>
                       <div className="flex-1">
                         <div className="text-sm text-black font-medium mb-1">
                           {consultation.title}
                         </div>
-                        <div className="text-xs text-red-500 mb-1">
+                        <div className="text-xs text-green-600 mb-1">
                           📍 {consultation.location}
                         </div>
                         <div className="flex items-center text-xs text-gray-500 mb-2">

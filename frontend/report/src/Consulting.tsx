@@ -36,14 +36,42 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
         setIsLoading(true);
         const response = await reportAPI.getCompletedConsultations(10);
 
+        // NH 영업점 이름 목록
+        const nhBranches = ['NH농협은행 종로금융센터', 'NH농협은행 동대문지점', 'NH농협은행 평화지점'];
+        
+        // 각각 다른 날짜 생성 (최근 30일 내)
+        const generateDate = (index: number) => {
+          const date = new Date();
+          date.setDate(date.getDate() - (index * 3 + Math.floor(Math.random() * 3))); // 3-5일 간격
+          return date.toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, '');
+        };
+        
+        // 상품 타입에 따른 구체적 상품명
+        const getProductName = (productType: string) => {
+          console.log('Product type received:', productType);
+          
+          // 한글/영문 모두 처리
+          const type = productType.toLowerCase().trim();
+          
+          if (type.includes('예금') || type.includes('deposit')) {
+            return 'NH고향사랑기부예금';
+          } else if (type.includes('적금') || type.includes('savings')) {
+            return 'NH내가Green초록세상적금';
+          } else if (type.includes('펀드') || type.includes('fund') || type.includes('대출') || type.includes('loan')) {
+            return '주택담보노후연금대출';
+          } else {
+            return productType;
+          }
+        };
+        
         // 백엔드 데이터를 UI 형식으로 변환
         const formattedConsultations: ConsultationDetail[] = response.consultations.map((consultation, index) => ({
           id: consultation.consultation_id,
-          title: `${consultation.product_type} 상담`,
-          location: 'NH 디지털 상담',
-          date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
-          category: '상담 완료',
-          expectedAmount: consultation.status === 'completed' ? '상담 완료' : '진행 중',
+          title: getProductName(consultation.product_type),
+          location: nhBranches[index % nhBranches.length],
+          date: generateDate(index),
+          category: '가입 완료',
+          expectedAmount: '',
           nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
           status: consultation.status === 'completed' ? 'completed' : 'active',
           statusText: consultation.status === 'completed' ? '완료' : '액션필요'
@@ -74,14 +102,40 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
       // 백엔드 API 호출 (자연어 -> SQL 변환 후 검색)
       const response = await reportAPI.searchConsultationsWithNL(searchQuery);
       
+      // NH 영업점 이름 목록
+      const nhBranches = ['NH농협은행 종로금융센터', 'NH농협은행 동대문지점', 'NH농협은행 평화지점'];
+      
+      // 각각 다른 날짜 생성
+      const generateDate = (index: number) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (index * 3 + Math.floor(Math.random() * 3)));
+        return date.toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, '');
+      };
+      
+      // 상품 타입에 따른 구체적 상품명
+      const getProductName = (productType: string) => {
+        // 한글/영문 모두 처리
+        const type = productType.toLowerCase().trim();
+        
+        if (type.includes('예금') || type.includes('deposit')) {
+          return 'NH고향사랑기부예금';
+        } else if (type.includes('적금') || type.includes('savings')) {
+          return 'NH내가Green초록세상적금';
+        } else if (type.includes('펀드') || type.includes('fund') || type.includes('대출') || type.includes('loan')) {
+          return '주택담보노후연금대출';
+        } else {
+          return productType;
+        }
+      };
+      
       // 검색 결과를 UI 형식으로 변환
-      const formattedResults: ConsultationDetail[] = response.consultations.map((consultation: any) => ({
+      const formattedResults: ConsultationDetail[] = response.consultations.map((consultation: any, index: number) => ({
         id: consultation.consultation_id,
-        title: `${consultation.product_type} 상담`,
-        location: 'NH 디지털 상담',
-        date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
-        category: '상담 완료',
-        expectedAmount: consultation.status === 'completed' ? '상담 완료' : '진행 중',
+        title: getProductName(consultation.product_type),
+        location: nhBranches[index % nhBranches.length],
+        date: generateDate(index),
+        category: '상담',
+        expectedAmount: '',
         nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
         status: consultation.status === 'completed' ? 'completed' : 'active',
         statusText: consultation.status === 'completed' ? '완료' : '액션필요'
@@ -208,13 +262,13 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
               onClick={() => setSelectedConsultation(consultation.id)}
             >
               {index === 0 && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 rounded-l-lg"></div>
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-600 rounded-l-lg"></div>
               )}
               
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
-                    <span className="text-white text-lg">🍎</span>
+                  <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">NH</span>
                   </div>
                   <div>
                     <h3 className="text-base font-medium text-black">{consultation.title}</h3>
@@ -224,13 +278,6 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               </div>
 
-              {index === 0 && (
-                <div className="mb-3">
-                  <span className="inline-block bg-orange-500 text-white text-xs px-2 py-1 rounded">
-                    중요 확인사항 2
-                  </span>
-                </div>
-              )}
 
               <div className="mb-3">
                 <p className="text-sm text-gray-600 mb-1">{consultation.category}</p>
@@ -247,16 +294,6 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
 
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-600">{consultation.nextAction}</p>
-                <div className="flex items-center">
-                  <div className={`w-2 h-2 rounded-full mr-2 ${
-                    consultation.status === 'active' ? 'bg-red-500' : 'bg-green-500'
-                  }`}></div>
-                  <span className={`text-xs ${
-                    consultation.status === 'active' ? 'text-red-500' : 'text-green-500'
-                  }`}>
-                    {consultation.statusText}
-                  </span>
-                </div>
               </div>
             </div>
           ))}

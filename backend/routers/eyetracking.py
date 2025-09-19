@@ -158,82 +158,65 @@ async def analyze_reading(data: ReadingData):
             face_data=data.face_analysis  # 프론트엔드에서 받은 얼굴 분석 데이터 전달
         )
         
-        # 데이터베이스에 분석 결과 저장 (Supabase API 사용)
-        try:
-            if supabase:
-                # 분석 결과에서 추출할 필드들
-                fixations = analysis_result.get('fixations', [])
-                text_elements = analysis_result.get('text_elements', [])
-                reading_metrics = analysis_result.get('reading_metrics', {})
-                
-                # 데이터베이스에 저장할 데이터 구성
-                insert_data = {
-                    "consultation_id": data.consultation_id,
-                    "customer_id": data.customer_id, 
-                    "section_name": data.current_section,
-                    "section_text": data.section_text,
-                    "difficulty_score": analysis_result.get('difficulty_score', 0.5),
-                    "confusion_probability": analysis_result.get('confusion_probability', 0.5),
-                    "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
-                    "gaze_data": analysis_result.get('gaze_data') or data.gaze_data,
-                    "fixations": [f.dict() for f in fixations] if fixations and hasattr(fixations[0], 'dict') else fixations,
-                    "text_elements": [t.dict() for t in text_elements] if text_elements and hasattr(text_elements[0], 'dict') else text_elements,
-                    "reading_metrics": reading_metrics.dict() if hasattr(reading_metrics, 'dict') else reading_metrics,
-                    "analysis_timestamp": datetime.now(timezone.utc).isoformat()
-                }
-                
-                # 필수 필드 검증
-                required_fields = ["consultation_id", "customer_id", "section_name", "section_text"]
-                for field in required_fields:
-                    if not insert_data.get(field):
-                        logger.warning(f"필수 필드가 누락되었습니다: {field}")
-                
-                # Supabase에 데이터 저장
-                try:
-                    result = supabase.table("reading_analysis").insert(insert_data).execute()
-                    
-                    if hasattr(result, 'data') and result.data:
-                        logger.info(f"분석 결과 Supabase 저장 완료: {data.consultation_id}")
-                        if result.data and len(result.data) > 0:
-                            logger.debug(f"저장된 레코드 ID: {result.data[0].get('id')}")
-                    else:
-                        logger.error(f"Supabase 응답에 data가 없음. 전체 응답: {result}")
-                except Exception as db_error:
-                    logger.error(f"Supabase 저장 중 오류 발생: {db_error}")
-                    # API 키 문제인지 확인
-                    if "No API key" in str(db_error):
-                        logger.error("Supabase API 키가 없거나 잘못되었습니다")
-            else:
-                logger.warning("Supabase 클라이언트가 초기화되지 않아 분석 결과를 저장하지 못했습니다.")
-                
-        except Exception as e:
-            logger.error(f"데이터베이스 저장 과정에서 예상치 못한 오류가 발생했습니다: {str(e)}")
+        # 데이터베이스 저장 건너뛰기 (사용하지 않음)
+        logger.info(f"분석 완료 - DB 저장 생략: consultation_id={data.consultation_id}")
         
-        # 프론트엔드 친화적 응답 형식 (텍스트 분석 포함)
-        return {
-            "status": analysis_result.get('status', 'unknown'),
+        # 통합 분석 결과에서 혼란도 및 간소화 정보 추출
+        logger.info(f"분석 결과 키: {analysis_result.keys()}")
+        
+        # 얼굴 분석 confusion (프론트엔드에서 전송)
+        face_confusion = 0.0
+        if data.face_analysis:
+            if isinstance(data.face_analysis, dict):
+                face_confusion = data.face_analysis.get('confusion_probability', 0.0)
+            logger.info(f"프론트엔드 얼굴 confusion: {face_confusion:.2f}")
+        
+        # 통합 분석 결과의 confusion (텍스트+얼굴+시선 통합)
+        # analysis_result에는 이미 통합된 confusion이 있음
+        integrated_confusion = analysis_result.get('confusion_probability', 0.0)
+        
+        # 최종 confusion 값 (통합 분석 사용)
+        final_confusion = integrated_confusion
+        
+        logger.info(f"혼란도 분석 - 얼굴: {face_confusion:.2f}, 통합: {integrated_confusion:.2f}")
+        
+        # AI 도우미 필요 여부 (confusion > 0.3)
+        needs_ai = final_confusion > 0.3
+        
+        # AI 간소화 텍스트
+        ai_explanation = analysis_result.get('ai_explanation', '')
+        if needs_ai and not ai_explanation:
+            ai_explanation = "이 부분이 어려우실 수 있습니다. 천천히 읽어보시고 궁금한 점은 문의해주세요."
+        
+        logger.info(f"최종 분석: confusion={final_confusion:.2f}, AI필요={needs_ai}")
+        
+        # 프론트엔드 응답
+        response = {
+            "status": "analyzed",
+            "confusion_probability": final_confusion,  # 통합 confusion 값
             "difficulty_score": analysis_result.get('difficulty_score', 0.5),
-            "confusion_probability": analysis_result.get('confusion_probability', 0.0),
             "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
-
-            # AI 설명 및 추천
-            "ai_explanation": analysis_result.get('ai_explanation', ''),
-            "recommendations": analysis_result.get('recommendations', []),
-
-            # 텍스트 분석 결과 (프론트엔드 UI용)
+            
+            # AI 도우미 트리거 (중요!)
+            "needs_ai_assistance": needs_ai,
+            "ai_explanation": ai_explanation,
+            
+            # 텍스트 분석 결과 (하이라이트용)
             "difficult_terms": analysis_result.get('difficult_terms', []),
-            "underlined_sections": analysis_result.get('underlined_sections', []),
-            "detailed_explanations": analysis_result.get('detailed_explanations', {}),
-
-            # 혼란 감지 (AI 도우미 트리거용)
             "confused_sentences": analysis_result.get('confused_sentences', []),
-            "needs_ai_assistance": analysis_result.get('confusion_probability', 0.0) > 0.7,
+            "confused_sentences_detail": analysis_result.get('confused_sentences_detail', []),  # 상세 정보
+            "detailed_explanations": analysis_result.get('detailed_explanations', {}),
+            
+            # 추천사항
+            "recommendations": analysis_result.get('recommendations', []),
 
             # 메타데이터
             "analysis_metadata": analysis_result.get('analysis_metadata', {}),
             "timestamp": datetime.now().isoformat(),
             "error_message": analysis_result.get('error_message')
         }
+        
+        return response
         
     except HTTPException:
         raise
@@ -518,22 +501,10 @@ async def submit_raw_emotion_data(request: EmotionDataRequest):
         # 3. 통합 분석 결과를 reading_analysis 테이블에 저장
 
         logger.info(f"Raw 감정 데이터 수신: {request.consultation_id}")
-
-        # 임시: Raw 데이터를 별도 테이블에 저장 (AI 서버 처리 대기)
-        if supabase:
-            raw_data = {
-                "consultation_id": request.consultation_id,
-                "customer_id": request.customer_id,
-                "raw_confusion": request.raw_emotion_scores.get("confusion", 0),
-                "raw_engagement": request.raw_emotion_scores.get("engagement", 0),
-                "raw_frustration": request.raw_emotion_scores.get("frustration", 0),
-                "raw_boredom": request.raw_emotion_scores.get("boredom", 0),
-                "timestamp": request.timestamp,
-                "status": "pending_ai_analysis"
-            }
-
-            result = supabase.table("raw_emotion_data").insert(raw_data).execute()
-
+        
+        # 데이터만 로그로 기록하고 성공 반환 (테이블 없으므로 저장 생략)
+        logger.debug(f"감정 데이터: confusion={request.raw_emotion_scores.get('confusion', 0)}")
+        
         return {"success": True, "message": "Raw 감정 데이터 수신 완료"}
         
 

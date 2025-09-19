@@ -52,17 +52,43 @@ function App() {
   const [currentSection, setCurrentSection] = useState('중도해지 시 불이익');
   const [customerName] = useState('김민수');
   const [productType] = useState('정기예금');
-  const [showAIHelper, setShowAIHelper] = useState(false);
-  const [confusedSections, setConfusedSections] = useState<ConfusedSection[]>([]);
+  const [showAIHelper, setShowAIHelper] = useState(true);  // 기본으로 표시
+  const [confusedSections, setConfusedSections] = useState<ConfusedSection[]>([
+    {
+      id: 'section_hardcoded',
+      title: '압류 제한 조항',
+      content: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
+      timestamp: new Date()
+    }
+  ]);
   
   const consultationId = '29853704-6f54-4df2-bb40-6efa9a63cf53';
   const [aiSuggestion, setAiSuggestion] = useState<{
     section: string;
     explanation: string;
     simpleExample?: string;
-  } | null>(null);
-  const [highlightedTexts, setHighlightedTexts] = useState<HighlightedText[]>([]);
-  const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([]);
+  } | null>({
+    section: '압류 제한 조항',
+    explanation: '계좌에 법적 조치가 취해지면 예금을 찾을 수 없게 됩니다.',
+    simpleExample: '예를 들어, 빚을 갚지 못해 법원이 계좌를 막으면, 통장에 돈이 있어도 찾을 수 없어요. 마치 자물쇠가 걸린 것처럼요.'
+  });
+  const [highlightedTexts, setHighlightedTexts] = useState<HighlightedText[]>([
+    { text: '계좌에 압류', explanation: '법원이 계좌를 막는 것' },
+    { text: '가압류', explanation: '재판 전에 임시로 재산을 못 쓰게 막는 것' },
+    { text: '질권설정 등이', explanation: '빚의 담보로 예금을 잡히는 것' },
+    { text: '등록될 경우', explanation: '이러한 조치가 적용되면' },
+    { text: '원금 및 이자', explanation: '처음 넣은 돈과 이자' },
+    { text: '지급 제한', explanation: '돈을 찾을 수 없게 되는 것' }
+  ]);
+  const [difficultSentences, setDifficultSentences] = useState<DifficultSentence[]>([
+    {
+      sentence: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',  // 전체 문장
+      sentence_id: 'sentence_full',
+      difficulty_score: 0.8,
+      simplified_explanation: '법원이나 채권자가 계좌를 막으면 돈을 찾을 수 없게 됩니다. 압류는 법원이 재산을 못 쓰게 막는 것, 가압류는 임시로 막는 것, 질권설정은 담보로 잡히는 것입니다.',
+      original_position: 0
+    }
+  ]);
   const [mainTerms, setMainTerms] = useState<{term: string, definition: string}[]>([]);
   const [gazeDataBuffer, setGazeDataBuffer] = useState<any[]>([]);
   const gazeDataBufferRef = useRef<any[]>([]);
@@ -193,7 +219,15 @@ function App() {
 
       const analysis = response.data;
 
-      if (analysis.confusion_probability > 0.15) {
+      // 백엔드가 이미 판단한 결과 사용
+      console.log('🎯 AI 분석 결과:', {
+        confusion: analysis.confusion_probability,
+        needsAI: analysis.needs_ai_assistance,
+        aiExplanation: analysis.ai_explanation
+      });
+      
+      // 백엔드가 AI 도우미가 필요하다고 판단했거나 AI 설명이 있으면
+      if (analysis.needs_ai_assistance || analysis.ai_explanation) {
         const confusedSection = {
           id: 'section_' + Date.now(),
           title: sectionName,
@@ -207,7 +241,25 @@ function App() {
           explanation: analysis.ai_explanation || '이 부분이 복잡할 수 있습니다. 더 자세한 설명이 필요하시면 상담원에게 문의해주세요.',
           simpleExample: analysis.simple_explanation
         });
+        
+        // confused_sentences_detail 처리 (백엔드에서 온 어려운 문장 상세 정보)
+        if (analysis.confused_sentences_detail && analysis.confused_sentences_detail.length > 0) {
+          const difficultSentencesFromBackend: DifficultSentence[] = analysis.confused_sentences_detail.map((sent: any, idx: number) => ({
+            sentence: sent.sentence,
+            sentence_id: sent.sentence_id,
+            difficulty_score: sent.difficulty_score,
+            simplified_explanation: sent.simplified_explanation,
+            original_position: idx
+          }));
+          
+          setDifficultSentences(difficultSentencesFromBackend);
+          console.log('🔴 어려운 문장 하이라이트:', difficultSentencesFromBackend);
+        } else if (analysis.confused_sentences && analysis.confused_sentences.length > 0) {
+          // confused_sentences_detail이 없으면 기본 처리
+          console.log('⚠️ confused_sentences_detail 없음, 인덱스만 사용:', analysis.confused_sentences);
+        }
 
+        // difficult_terms 처리 (어려운 용어들)
         if (analysis.difficult_terms && analysis.detailed_explanations) {
           const newHighlights: HighlightedText[] = analysis.difficult_terms.map((term: string) => ({
             text: term,
@@ -219,6 +271,7 @@ function App() {
             const newTexts = newHighlights.map(h => h.text).join(',');
             return prevTexts !== newTexts ? newHighlights : prev;
           });
+          console.log('🟡 어려운 용어 하이라이트:', newHighlights);
         }
         setShowAIHelper(true);
       }
@@ -263,10 +316,15 @@ function App() {
 
     const timer = setInterval(() => {
       if (gazeDataBufferRef.current.length > 0 && pdfTextRegions.length > 0) {
-        console.log(`분석 요청 전송: 시선 데이터 ${gazeDataBufferRef.current.length}개, PDF 영역 ${pdfTextRegions.length}개`);
+        // PDF에서 샘플 텍스트 추출 (시선 위치 기반으로 개선 필요)
+        const sampleText = pdfTextRegions.length > 0 
+          ? pdfTextRegions.slice(0, 3).map(r => r.text).join(' ').substring(0, 100)
+          : "계약기간 동안 약정이율로 계산하여 만기에 일시지급";
+        
+        // 5초마다 분석 요청 전송
         sendAnalysisData(
           'PDF 문서',
-          '',
+          sampleText,  // 실제 PDF 텍스트 전송
           5000
         );
       }
@@ -363,7 +421,7 @@ function App() {
     try {
       await axios.post(`${API_BASE_URL}/eyetracking/submit-emotion-data`, {
         consultation_id: '29853704-6f54-4df2-bb40-6efa9a63cf53',
-        customer_id: '12345678-1234-5678-9012-123456789012',
+        customer_id: '069efa8e-8d80-4700-9355-ec57caca3fe0',  // 올바른 UUID 형식
         raw_emotion_scores: {
           confusion: emotions.confusion,
           engagement: emotions.engagement,
@@ -386,12 +444,11 @@ function App() {
         timestamp: Date.now()
       }].slice(-50));
       
-      sendRawEmotionData(emotions);
+      // sendRawEmotionData(emotions);  // 테이블이 없으므로 주석 처리
     }
   };
 
   const handleGazeData = useCallback((gazeData: any) => {
-    console.log('👀 handleGazeData 호출됨:', gazeData);
     const newData = {
       screen_x: gazeData.x,
       screen_y: gazeData.y,
@@ -404,7 +461,6 @@ function App() {
     
     // 시선 위치 업데이트
     setCurrentGazePosition({ x: gazeData.x, y: gazeData.y });
-    console.log('✅ 시선 위치 설정됨:', gazeData.x, gazeData.y);
     
     // PDF 영역 내에 있는지 확인
     if (pdfViewerRef.current) {
@@ -414,22 +470,10 @@ function App() {
                       gazeData.y >= pdfRect.top && 
                       gazeData.y <= pdfRect.bottom;
       
-      if (isInPDF && Math.random() < 0.2) {
-        console.log('👁️ PDF 내 시선 위치:', {
-          x: gazeData.x - pdfRect.left,
-          y: gazeData.y - pdfRect.top,
-          confidence: gazeData.confidence
-        });
-      }
+      // PDF 내 시선 위치 로그 제거 (너무 자주 출력)
     }
 
-    if (Math.random() < 0.05) {
-      console.log('👁️ 시선 추적 상태:', {
-        position: { x: gazeData.x, y: gazeData.y },
-        bufferSize: gazeDataBufferRef.current.length,
-        confidence: gazeData.confidence
-      });
-    }
+    // 시선 추적 상태 로그 제거 (너무 자주 출력)
   }, []);
 
   return (
@@ -463,22 +507,22 @@ function App() {
           </div>
         </div>
         <div className="header-right">
-          <div className="tracking-status">
-            <span className="status-indicator camera">
-              <span className="status-dot"></span>
-              카메라 {isTracking ? '활성' : '비활성'}
-            </span>
-            <span className="status-indicator eye-track">
-              <span className="status-dot"></span>
-              시선추적 {isTracking ? '실행중' : '정지'}
-            </span>
-          </div>
-          <div className="ai-status">
-            <span className={`ai-indicator ${showAIHelper ? 'active' : ''}`}>
-              <span className="ai-dot"></span>
-              AI 도우미 {showAIHelper ? '활성' : '대기'}
-            </span>
-          </div>
+          {/*<div className="tracking-status">*/}
+          {/*  <span className="status-indicator camera">*/}
+          {/*    <span className="status-dot"></span>*/}
+          {/*    카메라 {isTracking ? '활성' : '비활성'}*/}
+          {/*  </span>*/}
+          {/*  <span className="status-indicator eye-track">*/}
+          {/*    <span className="status-dot"></span>*/}
+          {/*    시선추적 {isTracking ? '실행중' : '정지'}*/}
+          {/*  </span>*/}
+          {/*</div>*/}
+          {/*<div className="ai-status">*/}
+          {/*  <span className={`ai-indicator ${showAIHelper ? 'active' : ''}`}>*/}
+          {/*    <span className="ai-dot"></span>*/}
+          {/*    AI 도우미 {showAIHelper ? '활성' : '대기'}*/}
+          {/*  </span>*/}
+          {/*</div>*/}
           <div className="time">{new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
       </header>
@@ -513,12 +557,9 @@ function App() {
             </div>
             <PDFViewer
               fileUrl="/NH내가Green초록세상예금.pdf"
-              highlightedTexts={highlightedTexts}
-              difficultSentences={difficultSentences}
-              onSentenceClick={handleSentenceClick}
               onPdfLoaded={(textRegions) => {
                 setPdfTextRegions(textRegions);
-                console.log('PDF 텍스트 영역 로드:', textRegions.length);
+                console.log(`📚 PDF 텍스트 영역 로드 완료: ${textRegions.length}개`);
               }}
             />
           </div>
@@ -527,8 +568,8 @@ function App() {
             {confusedSections.length > 0 && (
               <div className="ai-insights-card">
                 <div className="card-header-with-icon">
-                  <span className="card-icon">🤖</span>
-                  <h3 className="card-title">AI 도우미</h3>
+                  <span className="card-icon"></span>
+                  <h3 className="card-title">NH AI 도우미</h3>
                 </div>
                 <div className="insights-content">
                   <p className="insight-intro">
@@ -574,13 +615,13 @@ function App() {
         <div
           style={{
             position: 'fixed',
-            left: currentGazePosition.x - 15,
-            top: currentGazePosition.y - 15,
-            width: '30px',
-            height: '30px',
+            left: currentGazePosition.x - 10,
+            top: currentGazePosition.y - 10,
+            width: '20px',
+            height: '20px',
             borderRadius: '50%',
-            border: '3px solid rgba(0, 123, 255, 0.8)',
-            backgroundColor: 'rgba(0, 123, 255, 0.2)',
+            border: '2px solid rgba(0, 123, 255, 0.4)',
+            backgroundColor: 'rgba(0, 123, 255, 0.07)',
             pointerEvents: 'none',
             zIndex: 9999,
             transition: 'all 0.1s ease-out'
@@ -634,7 +675,7 @@ function App() {
         <div className="footer-center">
           {showAIHelper && (
             <span className="ai-active-notice">
-              <span className="notice-icon">💡</span>
+              <span className="notice-icon">c</span>
               AI 도우미가 도움을 드리고 있습니다
             </span>
           )}

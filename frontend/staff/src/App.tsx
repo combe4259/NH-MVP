@@ -373,7 +373,6 @@ function App() {
                 {selectedCustomer.confusedSections.length > 0 && (
                   <div className="confused-sections-card">
                     <h3 className="section-title">
-                      <span className="title-icon">🚨</span>
                       집중 필요 구역
                     </h3>
                     <div className="confused-list">
@@ -381,7 +380,6 @@ function App() {
                         <div key={index} className="confused-item-detail">
                           <div className="confused-header">
                             <span className="confused-title">{section.section}</span>
-                            <span className="return-badge">{section.returnCount}회 반복</span>
                           </div>
                           <div className="confused-stats">
                             <span className="stat">체류 시간: {section.duration}초</span>
@@ -394,50 +392,11 @@ function App() {
                   </div>
                 )}
 
-                {/* AI 추천 액션 */}
-                <div className="recommendations-card">
-                  <h3 className="section-title">
-                    <span className="title-icon">🤖</span>
-                    AI 상담 가이드
-                  </h3>
-                  <div className="recommendations-list">
-                    {selectedCustomer.recommendations.map((rec, index) => (
-                      <div key={index} className="recommendation-item">
-                        <div className="rec-priority" style={{ backgroundColor: getPriorityColor(rec.priority) }}>
-                          {rec.priority === 'high' ? '긴급' : rec.priority === 'medium' ? '권장' : '참고'}
-                        </div>
-                        <div className="rec-content">
-                          <div className="rec-action">{rec.action}</div>
-                          <div className="rec-reason">{rec.reason}</div>
-                        </div>
-                        <button className="rec-apply">적용</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* 리스크 요인 */}
-                {selectedCustomer.riskFactors.length > 0 && (
-                  <div className="risk-factors-card">
-                    <h3 className="section-title">
-                      <span className="title-icon">⚠️</span>
-                      주의 사항
-                    </h3>
-                    <div className="risk-list">
-                      {selectedCustomer.riskFactors.map((risk, index) => (
-                        <div key={index} className="risk-item">
-                          <span className="risk-bullet">•</span>
-                          <span className="risk-text">{risk}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* 상담 진행 통계 */}
                 <div className="consultation-stats-card">
                   <h3 className="section-title">
-                    <span className="title-icon">📊</span>
                     상담 진행 통계
                   </h3>
                   <div className="stats-grid">

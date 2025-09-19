@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Worker, Viewer, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { searchPlugin } from '@react-pdf-viewer/search';
-import type { RenderHighlightsProps, HighlightArea } from '@react-pdf-viewer/search';
 
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
@@ -10,61 +9,24 @@ import '@react-pdf-viewer/search/lib/styles/index.css';
 import './PDFViewer.css';
 import './AIAssistant.css';
 
-interface ExtendedHighlightArea extends HighlightArea {
-    highlightContent: string;
-}
-
-interface HighlightedText {
-    text: string;
-    explanation: string;
-}
-
-interface DifficultSentence {
-    sentence: string;
-    sentence_id: string;
-    difficulty_score: number;
-    simplified_explanation: string;
-    original_position: number;
-    location?: {
-        page_number: number;
-        page_width: number;
-        page_height: number;
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-    };
-}
-
 interface PDFViewerProps {
     fileUrl: string;
-    highlightedTexts?: HighlightedText[];
-    difficultSentences?: DifficultSentence[];
-    onTextSelect?: (text: string) => void;
-    onSentenceClick?: (sentence: DifficultSentence) => void;
     onPdfLoaded?: (textRegions: any[]) => void;
 }
 
-const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], difficultSentences = [], onTextSelect, onSentenceClick, onPdfLoaded }) => {
+const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
     const [showPopup, setShowPopup] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
-    const [currentExplanation, setCurrentExplanation] = useState('');
-    const [currentSentence, setCurrentSentence] = useState<DifficultSentence | null>(null);
     const [pdfLoaded, setPdfLoaded] = useState(false);
-
+    
     const viewerContainerRef = useRef<HTMLDivElement>(null);
     
     // PDF 로드 시 텍스트 영역 추출
     useEffect(() => {
         if (pdfLoaded && viewerContainerRef.current && onPdfLoaded) {
-            // PDF.js 텍스트 레이어에서 텍스트 영역 추출
             const extractTextRegions = () => {
                 const textLayers = viewerContainerRef.current?.querySelectorAll('.rpv-core__text-layer');
                 const textRegions: any[] = [];
-                
-                // PDF 뷰어 컨테이너의 위치 (스크린 좌표)
-                const containerRect = viewerContainerRef.current?.getBoundingClientRect();
-                if (!containerRect) return;
                 
                 textLayers?.forEach((layer, pageIndex) => {
                     const textSpans = layer.querySelectorAll('span');
@@ -73,7 +35,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                         const text = span.textContent?.trim();
                         
                         if (text && text.length > 0) {
-                            // 스크린 좌표 그대로 저장
                             textRegions.push({
                                 text: text,
                                 page: pageIndex + 1,
@@ -88,92 +49,132 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                 });
                 
                 if (textRegions.length > 0) {
-                    console.log(`PDF 텍스트 영역 추출 완료: ${textRegions.length}개`);
-                    console.log('첫 번째 텍스트 영역:', textRegions[0]);
+                    console.log(`✅ PDF 텍스트 영역 추출 완료: ${textRegions.length}개`);
                     onPdfLoaded(textRegions);
+                } else {
+                    setTimeout(extractTextRegions, 1000);
                 }
             };
             
-            // PDF 렌더링 완료 후 텍스트 추출
             setTimeout(extractTextRegions, 500);
         }
     }, [pdfLoaded, onPdfLoaded]);
 
     const defaultLayoutPluginInstance = defaultLayoutPlugin();
+    
+    // 하드코딩된 설명
+    const EXPLANATIONS = {
+        '가압류': "통장에 법적인 문제가 생기면 돈을 못 찾아요. 빚 때문에 통장이 잠긴다고 생각하면 됩니다.",
+        '질권설정': "통장에 법적인 문제가 생기면 돈을 못 찾아요. 빚 때문에 통장이 잠긴다고 생각하면 됩니다.",
+        '권리구제': "나중에 문제가 생겼을 때 법적으로 도움받기 어려워진다는 뜻이에요. 이해하지 못했는데 서명하면 나중에 피해를 보상받기 힘들어집니다."
+    };
+    
+    const [currentKeyword, setCurrentKeyword] = useState<string>('');
 
     const searchPluginInstance = searchPlugin({
-        renderHighlights: (renderProps: RenderHighlightsProps) => {
+        renderHighlights: (renderProps) => {
+            // 특정 문장의 키워드들을 추적하기 위한 Set
+            const targetSentenceAreas = new Set<number>();
+            let targetLineTop: number | null = null;
+            
+            // 먼저 "가압류, 질권설정, 권리구제"이 포함된 라인들 찾기
+            const targetLineTops: number[] = [];
+            
+            renderProps.highlightAreas.forEach((area, idx) => {
+                const keyword = (area as any).keywordStr;
+                if (keyword?.includes('가압류') || keyword?.includes('질권설정') || keyword?.includes('권리구제')) {
+                    const cssProps = renderProps.getCssProperties(area);
+                    if (cssProps.top) {
+                        const topValue = typeof cssProps.top === 'string' ? cssProps.top : String(cssProps.top);
+                        const topNum = parseFloat(topValue);
+                        // 중복 제거 (오차 범위 2px)
+                        if (!targetLineTops.some(t => Math.abs(t - topNum) < 2)) {
+                            targetLineTops.push(topNum);
+                        }
+                    }
+                }
+            });
+            
+            // 타겟 라인들과 같은 높이에 있는 모든 키워드 찾기
+            targetLineTops.forEach(lineTop => {
+                renderProps.highlightAreas.forEach((area, idx) => {
+                    const cssProps = renderProps.getCssProperties(area);
+                    if (cssProps.top) {
+                        const topValue = typeof cssProps.top === 'string' ? cssProps.top : String(cssProps.top);
+                        const currentTop = parseFloat(topValue);
+                        if (Math.abs(currentTop - lineTop) < 2) {
+                            targetSentenceAreas.add(idx);
+                        }
+                    }
+                });
+            });
+            
             return (
                 <>
                     {renderProps.highlightAreas.map((area, index) => {
                         const keyword = (area as any).keywordStr;
                         if (!keyword?.trim()) return null;
-                        const finalKeyword = keyword.trim();
-
-                        // 주요 용어 확인
-                        const termMatch = highlightedTexts.find(ht =>
-                            typeof ht.text === 'string' &&
-                            (ht.text.includes(finalKeyword) || finalKeyword.includes(ht.text))
-                        );
-
-                        if (termMatch) {
+                        
+                        // 형광펜 하이라이트 키워드 (가압류, 질권설정, 권리구제)
+                        const highlightKeywords = ['가압류', '질권설정', '권리구제'];
+                        const isHighlightKeyword = highlightKeywords.some(k => keyword.includes(k));
+                        
+                        // 타겟 문장에 속하는지 확인
+                        const isInTargetSentence = targetSentenceAreas.has(index);
+                        
+                        if (isHighlightKeyword) {
+                            // 형광펜 하이라이트 (가압류, 질권설정, 권리구제)
+                            const cssProps = renderProps.getCssProperties(area);
                             return (
                                 <div
-                                    key={`term-${index}`}
-                                    className="custom-highlight-underline"
-                                    style={renderProps.getCssProperties(area)}
-                                    onClick={() => handleHighlightClick(area, termMatch.explanation)}
-                                    title={termMatch.explanation}
-                                />
-                            );
-                        }
-
-                        // 어려운 문장 확인
-                        const sentenceMatch = difficultSentences.find(s =>
-                            s.sentence.includes(finalKeyword) || finalKeyword.includes(s.sentence)
-                        );
-
-                        if (sentenceMatch) {
-                            return (
-                                <div
-                                    key={`sentence-${index}`}
-                                    className="sentence-underline"
+                                    key={`keyword-${index}`}
+                                    className="keyword-highlight"
                                     style={{
-                                        ...renderProps.getCssProperties(area),
-                                        position: 'absolute',
-                                        borderBottom: '3px solid #ffc107 !important',
-                                        backgroundColor: 'transparent !important',
+                                        ...cssProps,
                                         cursor: 'pointer',
-                                        zIndex: 10
+                                        pointerEvents: 'auto',
+                                        zIndex: 100
                                     }}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-
-                                        if (!viewerContainerRef.current) return;
-
+                                        
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        const containerRect = viewerContainerRef.current.getBoundingClientRect();
-
-                                        console.log('밑줄 위치:', rect);
-                                        console.log('컨테이너 위치:', containerRect);
-
-                                        setCurrentSentence(sentenceMatch);
-                                        setPopupPosition({
-                                            top: rect.bottom - containerRect.top + 10,
-                                            left: containerRect.width / 2 - 200 // 중앙 정렬을 위해 팝업 너비의 절반만큼 빼기
-                                        });
-                                        setShowPopup(true);
-
-                                        if (onSentenceClick) {
-                                            onSentenceClick(sentenceMatch);
+                                        
+                                        // 클릭된 키워드 확인
+                                        const clickedKeyword = highlightKeywords.find(k => keyword.includes(k));
+                                        if (clickedKeyword) {
+                                            setCurrentKeyword(clickedKeyword);
                                         }
+                                        
+                                        // 화면 기준 절대 위치로 설정
+                                        const newPosition = {
+                                            top: rect.bottom + window.scrollY + 5,
+                                            left: rect.left + window.scrollX
+                                        };
+                                        
+                                        setPopupPosition(newPosition);
+                                        setShowPopup(true);
                                     }}
-                                    title={`클릭하여 설명 보기: ${sentenceMatch.sentence.substring(0, 30)}...`}
+                                    title="클릭하여 쉬운 설명 보기"
+                                />
+                            );
+                        } else if (isInTargetSentence) {
+                            // 타겟 문장에 속하는 다른 단어들은 밑줄
+                            const cssProps = renderProps.getCssProperties(area);
+                            return (
+                                <div
+                                    key={`underline-${index}`}
+                                    className="line-underline"
+                                    style={{
+                                        ...cssProps,
+                                        cursor: 'auto',
+                                        pointerEvents: 'none'
+                                    }}
                                 />
                             );
                         }
-
+                        
                         return null;
                     })}
                 </>
@@ -183,73 +184,34 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
 
     const { highlight } = searchPluginInstance;
 
-    const keywordsRef = useRef<string>('');
-
+    // PDF 로드되면 자동으로 하이라이트
     useEffect(() => {
         if (highlight && pdfLoaded) {
-            const termKeywords = highlightedTexts.map(ht => ht.text);
-            const sentenceKeywords = difficultSentences.map(s => s.sentence);
-            const allKeywords = [...termKeywords, ...sentenceKeywords];
-            const keywordsString = allKeywords.join('|||');
-
-            console.log('PDFViewer useEffect 실행:');
-            console.log('- pdfLoaded:', pdfLoaded);
-            console.log('- highlightedTexts:', highlightedTexts);
-            console.log('- difficultSentences:', difficultSentences);
-            console.log('- allKeywords:', allKeywords);
-
-            if (keywordsString !== keywordsRef.current && allKeywords.length > 0) {
-                keywordsRef.current = keywordsString;
-                highlight(allKeywords);
-                console.log('✅ 검색 실행 - 키워드:', allKeywords);
-            }
+            setTimeout(() => {
+                // 모든 키워드 하이라이트 (형광펜 + 밑줄)
+                const keywords = [
+                    // 형광펜 키워드
+                    '가압류', '질권설정', '권리구제',
+                    // 첫 번째 문장 밑줄 키워드
+                    '계좌에', '압류', '등이', '등록될', '경우', '원금', '및', '이자', '지급', '제한',
+                    // 두 번째 문장 밑줄 키워드
+                    '남기시는', '경우,', '추후', '해당', '내용과', '관련한', '권리구제가', '어려울', '수', '있습니다'
+                ];
+                console.log('🎯 하이라이트 적용:', keywords);
+                highlight(keywords);
+            }, 1500);
         }
-    }, [pdfLoaded, highlightedTexts, difficultSentences, highlight]);
-
-    const handleHighlightClick = (area: HighlightArea, explanation: string) => {
-        if (!viewerContainerRef.current) return;
-        setCurrentExplanation(explanation);
-
-        const containerRect = viewerContainerRef.current.getBoundingClientRect();
-        setPopupPosition({
-            left: area.left + area.width / 2,
-            top: area.top
-        });
-        setShowPopup(true);
-    };
-
-    const handleSentenceClick = useCallback((sentence: DifficultSentence, area: HighlightArea, event: React.MouseEvent) => {
-        if (!viewerContainerRef.current) return;
-
-        const containerRect = viewerContainerRef.current.getBoundingClientRect();
-        const relativeLeft = (area.left / 100) * containerRect.width;
-        const relativeTop = (area.top / 100) * containerRect.height + (area.height / 100) * containerRect.height + 10;
-
-        setCurrentSentence(sentence);
-        setPopupPosition({ top: relativeTop, left: relativeLeft });
-        setShowPopup(true);
-
-        if (onSentenceClick) {
-            onSentenceClick(sentence);
-        }
-    }, [onSentenceClick]);
-
-    const handleTextSelection = () => {
-        const selection = window.getSelection();
-        const text = selection?.toString().trim();
-        if (text && text.length > 0 && onTextSelect) {
-            onTextSelect(text);
-        }
-    };
+    }, [pdfLoaded, highlight]);
 
     const handleDocumentLoad = useCallback(() => {
         setPdfLoaded(true);
+        console.log('📄 PDF 로드 완료');
     }, []);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
-            if (!target.closest('.pdf-popup') && !target.closest('.custom-highlight-underline') && !target.closest('.sentence-underline')) {
+            if (!target.closest('.sentence-popup') && !target.closest('.sentence-underline')) {
                 setShowPopup(false);
             }
         };
@@ -269,7 +231,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
         <div
             className="pdf-viewer-container"
             ref={viewerContainerRef}
-            onMouseUp={handleTextSelection}
             style={{ position: 'relative' }}
         >
             <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
@@ -282,51 +243,105 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, highlightedTexts = [], d
                     />
                 </div>
 
-                {showPopup && currentSentence && (
+                {showPopup && (
                     <div
-                        className="sentence-popup ai-style"
+                        className="sentence-popup"
                         style={{
-                            position: 'absolute',
-                            left: '50%',
+                            position: 'fixed',
+                            left: `${popupPosition.left}px`,
                             top: `${popupPosition.top}px`,
-                            transform: 'translateX(-50%)',
-                            zIndex: 1000,
-                            width: '400px'
+                            zIndex: 10000,
+                            width: '336px',  // 280px * 1.2 = 336px
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #e1e4e8',
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 24px rgba(0, 166, 81, 0.15)',  // NH 그린 색상 그림자
+                            overflow: 'hidden'
                         }}
                     >
-                        <div className="ai-panel">
-                            <div className="panel-header">
-                                <div className="ai-identity">
-                                    <span className="ai-avatar-small">🤖</span>
-                                    <span className="ai-name">NH AI 도우미</span>
+                        {/* 헤더 */}
+                        <div style={{
+                            backgroundColor: '#00A651',  // NH 그린
+                            padding: '12px 16px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{
+                                color: 'white',
+                                fontSize: '14px',
+                                fontWeight: '600'
+                            }}>
+                                NH 용어 도우미
+                            </span>
+                            <button 
+                                onClick={() => setShowPopup(false)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'white',
+                                    fontSize: '18px',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    lineHeight: 1
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        
+                        {/* 컨텐츠 */}
+                        <div style={{ padding: '16px' }}>
+                            {/* 쉬운 설명 */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <div style={{ 
+                                    fontSize: '12px', 
+                                    color: '#00A651',  // NH 그린
+                                    marginBottom: '8px',
+                                    fontWeight: '600',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    쉽게 풀어서 설명
                                 </div>
-                                <button className="close-btn" onClick={() => setShowPopup(false)}>✕</button>
+                                <div style={{ 
+                                    fontSize: '15px',
+                                    lineHeight: '1.7',
+                                    color: '#1a1a1a',
+                                    padding: '16px',
+                                    borderRadius: '8px',
+                                    borderLeft: '4px solid #00A651',  // NH 그린 강조선
+                                    fontWeight: '500'
+                                }}>
+                                    {EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['가압류']}
+                                </div>
                             </div>
 
-                            <div className="panel-content">
-                                <div className="original-content">
-                                    <span className="label">원본 내용</span>
-                                    <p className="original-text">{currentSentence.sentence}</p>
+                            {/* 실생활 예시 */}
+                            <div>
+                                <div style={{ 
+                                    fontSize: '12px', 
+                                    color: '#00A651',  // NH 그린
+                                    marginBottom: '8px',
+                                    fontWeight: '600',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    실생활 예시
                                 </div>
-
-                                <div className="simple-explanation">
-                                    <span className="label">쉽게 풀어서 설명</span>
-                                    <div className="explanation-box">
-                                        <p>{currentSentence.simplified_explanation}</p>
-                                    </div>
-                                </div>
-
-                                <div className="example-section">
-                                    <span className="label">실생활 예시</span>
-                                    <div className="example-box">
-                                        <span className="example-icon">💡</span>
-                                        <p>
-                                            {currentSentence.sentence.includes('압류') || currentSentence.sentence.includes('가압류') || currentSentence.sentence.includes('질권설정')
-                                                ? '법원에서 계좌를 막거나, 빚 담보로 예금이 잡히면 돈을 찾을 수 없습니다.'
-                                                : '이 조건에 해당하는 경우 예금 이용에 제한이 있을 수 있습니다.'
-                                            }
-                                        </p>
-                                    </div>
+                                <div style={{ 
+                                    fontSize: '14px',
+                                    lineHeight: '1.6',
+                                    color: '#1a1a1a',
+                                    padding: '16px',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 2px 8px rgba(0, 166, 81, 0.1)',  // 그린 톤 그림자
+                                    fontWeight: '400'
+                                }}>
+                                    {currentKeyword === '권리구제' 
+                                        ? '예를 들어, 상품 설명을 제대로 듣지 못했는데 "이해했다"고 서명했다면, 나중에 손해를 봐도 은행에 책임을 물을 수 없게 됩니다.'
+                                        : '통장에 100만원이 있어도 법원이 막으면 한 푼도 못 찾아요. 통장에 자물쇠가 걸린 것과 같습니다.'
+                                    }
                                 </div>
                             </div>
                         </div>

@@ -136,11 +136,14 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
     const gazeX = noseX + (noseX - eyeCenterX) * 2;
     const gazeY = noseY + (noseY - eyeCenterY) * 2;
     
-    console.log('👀 시선 계산:', {
-      nose: { x: noseX, y: noseY },
-      eyeCenter: { x: eyeCenterX, y: eyeCenterY },
-      gaze: { x: gazeX, y: gazeY }
-    });
+    // 가끔씩만 로그 (2% 확률)
+    if (Math.random() < 0.02) {
+      // console.log('👀 시선 계산:', {
+      //   nose: { x: noseX, y: noseY },
+      //   eyeCenter: { x: eyeCenterX, y: eyeCenterY },
+      //   gaze: { x: gazeX, y: gazeY }
+      // });
+    }
 
     return { 
       x: Math.max(0, Math.min(frameWidth, gazeX)), 
@@ -183,20 +186,20 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
       
       // 랜드마크 확인 (10프레임마다만 로그)
       if (Math.random() < 0.05) {
-        console.log('🔍 랜드마크 체크:', {
-          총개수: landmarks.length,
-          첫번째_랜드마크: landmarks[0],
-          홍채_존재: landmarks[468] ? '있음' : '없음',
-          캘리브레이션: calibrationCompleteRef.current
-        });
+        // console.log('🔍 랜드마크 체크:', {
+        //   총개수: landmarks.length,
+        //   첫번째_랜드마크: landmarks[0],
+        //   홍채_존재: landmarks[468] ? '있음' : '없음',
+        //   캘리브레이션: calibrationCompleteRef.current
+        // });
       }
 
       // 시선 좌표 계산
       const gazeCoords = calculateGazeDirection(landmarks, videoWidth, videoHeight);
       
-      // 디버그 로그 추가
-      if (calibrationCompleteRef.current) {
-        console.log('📍 캘리브레이션 완료 상태, gazeCoords:', gazeCoords);
+      // 디버그 로그 추가 (5% 확률)
+      if (calibrationCompleteRef.current && Math.random() < 0.05) {
+        // console.log('📍 캘리브레이션 완료 상태, gazeCoords:', gazeCoords);
       }
 
       if (calibrationCompleteRef.current && gazeCoords) {
@@ -221,12 +224,15 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
 
         setGazePosition(gazeCoords);
         
-        console.log('👁️ 시선 데이터 전송:', {
-          canvasCoords: gazeCoords,
-          screenCoords: { x: screenX, y: screenY },
-          videoSize: { w: videoWidth, h: videoHeight },
-          screenSize: { w: screenWidth, h: screenHeight }
-        });
+        // 가끔씩만 로그 (3% 확률)
+        if (Math.random() < 0.03) {
+          // console.log('👁️ 시선 데이터 전송:', {
+          //   canvasCoords: gazeCoords,
+          //   screenCoords: { x: screenX, y: screenY },
+          //   videoSize: { w: videoWidth, h: videoHeight },
+          //   screenSize: { w: screenWidth, h: screenHeight }
+          // });
+        }
 
         if (onGazeData) {
           onGazeData(gazeData);
@@ -401,13 +407,15 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
     
     // 프레임 수집 상태 로깅
     if (frameBufferRef.current.length % 10 === 0) {
-      console.log(`📹 CNN-LSTM 프레임 수집: ${frameBufferRef.current.length}/${frameBufferSize}`);
+      // console.log(`📹 CNN-LSTM 프레임 수집: ${frameBufferRef.current.length}/${frameBufferSize}`);
     }
     
-    // 30프레임이 모이면 백엔드로 전송
+    // 30프레임이 모이면 백엔드로 전송 (한 번만)
     if (frameBufferRef.current.length === frameBufferSize) {
-      console.log('📤 30프레임 시퀀스 백엔드 전송...');
+      // console.log('📤 30프레임 시퀀스 백엔드 전송...');
       sendFramesToBackend();
+      // 즉시 버퍼 초기화하여 중복 전송 방지
+      frameBufferRef.current = [];
     }
   }, [onFaceAnalysis]);
   

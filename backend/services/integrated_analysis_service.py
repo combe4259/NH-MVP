@@ -247,20 +247,20 @@ class IntegratedAnalysisService:
                                        gaze: float, text_difficulty: float) -> bool:
         """문장 간소화 AI 트리거 여부 결정"""
         
-        # 케이스 1: 통합 혼란도가 높음
-        if integrated > 0.65:
+        # 케이스 1: 통합 혼란도가 임계값 초과 (0.3으로 낮춤)
+        if integrated > 0.3:
             return True
         
-        # 케이스 2: 얼굴 표정이 매우 혼란스럽고 텍스트도 어려움
-        if face > 0.7 and text_difficulty > 0.6:
+        # 케이스 2: 얼굴 표정이 혼란스럽고 텍스트도 어려움
+        if face > 0.4 and text_difficulty > 0.4:
             return True
         
-        # 케이스 3: 시선 패턴이 매우 혼란스럽고 텍스트도 어려움  
-        if gaze > 0.7 and text_difficulty > 0.6:
+        # 케이스 3: 시선 패턴이 혼란스럽고 텍스트도 어려움  
+        if gaze > 0.4 and text_difficulty > 0.4:
             return True
         
-        # 케이스 4: 모든 지표가 중간 이상
-        if face > 0.5 and gaze > 0.5 and text_difficulty > 0.5:
+        # 케이스 4: 모든 지표가 낮은 중간 이상
+        if face > 0.3 and gaze > 0.3 and text_difficulty > 0.3:
             return True
         
         return False
