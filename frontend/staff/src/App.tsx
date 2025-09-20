@@ -57,8 +57,8 @@ function App() {
       startTime: new Date(Date.now() - 300000),
       focusAreas: ['상품 개요', '이자율'],
       confusedSections: [
-        { section: '중도해지 불이익', duration: 45, returnCount: 3 },
-        { section: '우대금리 조건', duration: 30, returnCount: 2 }
+        { section: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우', duration: 45, returnCount: 3 },
+        { section: '권리구제가 어려울 수 있습니다', duration: 30, returnCount: 2 }
       ],
       readingSpeed: 180,
       attentionScore: 78,
@@ -266,8 +266,8 @@ function App() {
               
               <div className="product-detail-content">
                 <div className="customer-info-header">
-                  <div className="customer-avatar-large">
-                    {selectedCustomer.name.substring(0, 2)}
+                  <div className="customer-avatar-large" style={{ backgroundColor: '#00A651' }}>
+                    {selectedCustomer.name}
                   </div>
                   <div className="customer-basic-info">
                     <h3 className="customer-name-large">{selectedCustomer.name}</h3>
@@ -332,28 +332,28 @@ function App() {
                   <h3 className="section-title">실시간 이해도 분석</h3>
                   <div className="circular-analysis">
                     <div className="circular-chart">
-                      <svg className="progress-ring" width="200" height="200">
+                      <svg className="progress-ring" width="180" height="180">
                         <circle
                           className="progress-ring-circle-bg"
                           stroke="#e0e0e0"
-                          strokeWidth="12"
+                          strokeWidth="10"
                           fill="transparent"
-                          r="90"
-                          cx="100"
-                          cy="100"
+                          r="80"
+                          cx="90"
+                          cy="90"
                         />
                         <circle
                           className="progress-ring-circle"
                           stroke={selectedCustomer.comprehensionLevel < 50 ? '#f44336' : selectedCustomer.comprehensionLevel < 70 ? '#ff9800' : '#4caf50'}
-                          strokeWidth="12"
+                          strokeWidth="10"
                           fill="transparent"
-                          r="90"
-                          cx="100"
-                          cy="100"
-                          strokeDasharray={`${2 * Math.PI * 90}`}
-                          strokeDashoffset={`${2 * Math.PI * 90 * (1 - selectedCustomer.comprehensionLevel / 100)}`}
+                          r="80"
+                          cx="90"
+                          cy="90"
+                          strokeDasharray={`${2 * Math.PI * 80}`}
+                          strokeDashoffset={`${2 * Math.PI * 80 * (1 - selectedCustomer.comprehensionLevel / 100)}`}
                           strokeLinecap="round"
-                          transform="rotate(-90 100 100)"
+                          transform="rotate(-90 90 90)"
                         />
                       </svg>
                       <div className="chart-center">
@@ -382,15 +382,48 @@ function App() {
                             <span className="confused-title">{section.section}</span>
                           </div>
                           <div className="confused-stats">
-                            <span className="stat">체류 시간: {section.duration}초</span>
-                            <span className="stat">이해도 하락 구간</span>
+                            <span className="stat">
+                              {index === 0 
+                                ? `해당 문장 10초 이상 체류, ${section.returnCount}회 반복 읽음`
+                                : `표정 분석 시 이해도 하락 보임, 15초 이상 체류`
+                              }
+                            </span>
                           </div>
-                          <button className="explain-action">AI 설명 지원</button>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* AI 상담 가이드 */}
+                <div className="ai-guide-card">
+                  <h3 className="section-title">
+                    AI 상담 가이드
+                  </h3>
+                  <div className="ai-guide-list">
+                    <div className="ai-guide-item">
+                      <span className="guide-priority" style={{ backgroundColor: '#ff4444', color: 'white' }}>긴급</span>
+                      <div className="guide-content">
+                        <div className="guide-title">가압류, 질권설정 용어 쉽게 설명</div>
+                        <div className="guide-reason">통장 압류 시 돈을 찾을 수 없다는 점 강조 필요</div>
+                      </div>
+                    </div>
+                    <div className="ai-guide-item">
+                      <span className="guide-priority" style={{ backgroundColor: '#ff9800', color: 'white' }}>권장</span>
+                      <div className="guide-content">
+                        <div className="guide-title">권리구제 관련 실제 사례 제공</div>
+                        <div className="guide-reason">서명 후 피해 보상이 어려운 사례 설명 권장</div>
+                      </div>
+                    </div>
+                    <div className="ai-guide-item">
+                      <span className="guide-priority" style={{ backgroundColor: '#4caf50', color: 'white' }}>참고</span>
+                      <div className="guide-content">
+                        <div className="guide-title">유사 상품 비교표 준비</div>
+                        <div className="guide-reason">고객이 금리, 이자율 부분에 높은 관심 보임</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
 
 
@@ -490,13 +523,13 @@ function App() {
             <div className="products-list">
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH 행복드림 정기예금</h3>
+                  <h3 className="product-name">NH고향사랑기부예금</h3>
                   <span className="product-type">정기예금</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
                     <span className="spec-label">금리</span>
-                    <span className="spec-value">연 4.0%</span>
+                    <span className="spec-value">연 2.15~2.6%</span>
                   </div>
                   <div className="product-spec">
                     <span className="spec-label">기간</span>
@@ -515,21 +548,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH 올원 적금</h3>
-                  <span className="product-type">적금</span>
+                  <h3 className="product-name">NH왈츠회전예금 II</h3>
+                  <span className="product-type">정기예금</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
                     <span className="spec-label">금리</span>
-                    <span className="spec-value">연 4.5%</span>
+                    <span className="spec-value">연 2.30~2.65%</span>
                   </div>
                   <div className="product-spec">
                     <span className="spec-label">기간</span>
-                    <span className="spec-value">24개월</span>
+                    <span className="spec-value">12~36개월</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">월납입</span>
-                    <span className="spec-value">50만원</span>
+                    <span className="spec-label">최소금액</span>
+                    <span className="spec-value">300만원</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -540,21 +573,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH-Amundi 글로벌 펀드</h3>
-                  <span className="product-type">펀드</span>
+                  <h3 className="product-name">채움적금</h3>
+                  <span className="product-type">적금</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
-                    <span className="spec-label">수익률</span>
-                    <span className="spec-value">연 6.2%</span>
+                    <span className="spec-label">금리</span>
+                    <span className="spec-value">연 2.45~2.55%</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">위험도</span>
-                    <span className="spec-value">중간</span>
+                    <span className="spec-label">기간</span>
+                    <span className="spec-value">12~36개월</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">최소투자</span>
-                    <span className="spec-value">100만원</span>
+                    <span className="spec-label">월납입</span>
+                    <span className="spec-value">자유적립</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -565,21 +598,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH 스마트 적금</h3>
+                  <h3 className="product-name">NH고향사랑기부적금</h3>
                   <span className="product-type">적금</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
                     <span className="spec-label">금리</span>
-                    <span className="spec-value">연 3.8%</span>
+                    <span className="spec-value">연 2.60~3.55%</span>
                   </div>
                   <div className="product-spec">
                     <span className="spec-label">기간</span>
-                    <span className="spec-value">12개월</span>
+                    <span className="spec-value">12~36개월</span>
                   </div>
                   <div className="product-spec">
                     <span className="spec-label">월납입</span>
-                    <span className="spec-value">30만원</span>
+                    <span className="spec-value">최대 50만원</span>
                   </div>
                 </div>
                 <div className="product-actions">

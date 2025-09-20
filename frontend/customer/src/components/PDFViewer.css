@@ -28,7 +28,7 @@
 
 /* 키워드 형광펜 하이라이트 스타일 */
 .keyword-highlight {
-  background-color: rgba(255, 235, 59, 0.3) !important;  /* 연한 노란 형광펜 효과 */
+  background-color: rgba(0, 166, 81, 0.25) !important;  /* NH 그린 형광펜 효과 */
   border-radius: 2px !important;
   cursor: pointer !important;
   transition: all 0.2s ease-in-out;
@@ -38,14 +38,14 @@
 }
 
 .keyword-highlight:hover {
-  background-color: rgba(255, 235, 59, 0.5) !important;  /* 호버시 조금 더 진한 형광펜 */
+  background-color: rgba(0, 166, 81, 0.4) !important;  /* 호버시 조금 더 진한 NH 그린 */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* 키워드가 포함된 전체 줄 밑줄 */
 .line-underline {
   background-color: transparent !important;
-  border-bottom: 3.5px solid rgba(255, 235, 59, 0.6) !important;  /* 더 두꺼운 노란색 밑줄 */
+  border-bottom: 3.5px solid rgba(0, 166, 81, 0.5) !important;  /* NH 그린 밑줄 */
   cursor: pointer !important;
   transition: all 0.2s ease-in-out;
   position: absolute !important;
@@ -54,7 +54,7 @@
 }
 
 .line-underline:hover {
-  border-bottom: 4px solid rgba(255, 235, 59, 0.8) !important;
+  border-bottom: 4px solid rgba(0, 166, 81, 0.7) !important;
 }
 
 /* 팝업 스타일 */

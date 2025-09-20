@@ -195,7 +195,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                     // 첫 번째 문장 밑줄 키워드
                     '계좌에', '압류', '등이', '등록될', '경우', '원금', '및', '이자', '지급', '제한',
                     // 두 번째 문장 밑줄 키워드
-                    '남기시는', '경우,', '추후', '해당', '내용과', '관련한', '권리구제가', '어려울', '수', '있습니다'
+                    '남기시는', '경우,', '추후', '해당', '내용과', '관련한', '가', '어려울', '수', '있습니다'
                 ];
                 console.log('🎯 하이라이트 적용:', keywords);
                 highlight(keywords);
@@ -272,7 +272,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 fontSize: '14px',
                                 fontWeight: '600'
                             }}>
-                                NH 용어 도우미
+                                NH 문장 도우미
                             </span>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 {/* TTS 재생 버튼 */}

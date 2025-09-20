@@ -173,6 +173,7 @@ body {
 .dashboard-main {
   flex: 1;
   padding: 24px;
+  background: #f8f9fa;
 }
 
 /* Metrics Row */
@@ -255,32 +256,34 @@ body {
 
 /* Add spacing to the center panel */
 .dashboard-grid .detail-panel {
-  margin: 0 20px;
+  margin: 0;
 }
 
 /* Panels */
 .panel {
-  background: var(--nh-white);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  border: none;
 }
 
 .panel-header {
   padding: 20px;
-  border-bottom: 1px solid var(--nh-border);
+  border-bottom: 1px solid #dee2e6;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: white;
 }
 
 .panel-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--nh-dark);
+  color: #1a1a1a;
   word-wrap: break-word;
   overflow-wrap: break-word;
   hyphens: auto;
@@ -600,6 +603,7 @@ body {
 
 .spec-value.highlight {
   color: var(--nh-green);
+  font-weight: 600;
 }
 
 /* Comprehension Analysis */
@@ -696,11 +700,11 @@ body {
 
 /* Confused Sections */
 .confused-sections-card {
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
+  background: #ffebeb;
+  border: 1px solid #ffcccc;
   border-radius: var(--radius);
   padding: 16px;
-  box-shadow: none;
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.08);
 }
 
 .confused-list {
@@ -710,11 +714,11 @@ body {
 }
 
 .confused-item-detail {
-  background: #fafafa;
+  background: #ffffff;
   border-radius: 6px;
-  padding: 12px;
-  border-left: 3px solid #e0e0e0;
-  box-shadow: none;
+  padding: 10px 12px;
+  border-left: 3px solid #ff6666;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .confused-header {
@@ -746,18 +750,62 @@ body {
 
 .confused-stats .stat {
   font-size: 12px;
-  color: var(--nh-gray);
+  color: var(--nh-dark);
 }
 
 .explain-action {
-  padding: 6px 12px;
-  background: var(--nh-green);
-  color: white;
-  border: none;
-  border-radius: 4px;
+  display: none;
+}
+
+/* AI 가이드 카드 */
+.ai-guide-card {
+  background: #f0faf5;
+  border: 1px solid #c8e6d4;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.ai-guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-guide-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  background: white;
+}
+
+.guide-priority {
+  padding: 6px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.guide-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nh-dark);
+}
+
+.guide-reason {
   font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
+  color: var(--nh-gray);
 }
 
 /* Recommendations Card */
@@ -1407,8 +1455,9 @@ body {
 }
 
 .spec-value.highlight {
-  color: var(--nh-blue);
+  color: var(--nh-green);
   font-size: 14px;
+  font-weight: 600;
 }
 
 .consultation-status {
@@ -1432,7 +1481,7 @@ body {
 
 .status-phase {
   font-size: 14px;
-  color: var(--nh-blue);
+  color: var(--nh-green);
   font-weight: 600;
 }
 
@@ -1447,7 +1496,7 @@ body {
 
 .progress-fill-full {
   height: 100%;
-  background: var(--nh-blue);
+  background: var(--nh-green);
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -1808,7 +1857,7 @@ body {
 
 .progress-fill {
   height: 100%;
-  background: var(--nh-blue);
+  background: var(--nh-green);
   border-radius: 3px;
   transition: width 0.3s ease;
 }
