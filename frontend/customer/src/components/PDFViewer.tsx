@@ -274,20 +274,70 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                             }}>
                                 NH 용어 도우미
                             </span>
-                            <button 
-                                onClick={() => setShowPopup(false)}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'white',
-                                    fontSize: '18px',
-                                    cursor: 'pointer',
-                                    padding: 0,
-                                    lineHeight: 1
-                                }}
-                            >
-                                ×
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                {/* TTS 재생 버튼 */}
+                                <button 
+                                    onClick={() => {
+                                        const explanationText = EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['가압류'];
+                                        const exampleText = currentKeyword === '권리구제' 
+                                            ? '예를 들어, 상품 설명을 제대로 듣지 못했는데 이해했다고 서명했다면, 나중에 손해를 봐도 은행에 책임을 물을 수 없게 됩니다.'
+                                            : '통장에 100만원이 있어도 법원이 막으면 한 푼도 못 찾아요. 통장에 자물쇠가 걸린 것과 같습니다.';
+                                        
+                                        const fullText = `${explanationText} ${exampleText}`;
+                                        
+                                        // Web Speech API를 사용한 TTS
+                                        if ('speechSynthesis' in window) {
+                                            // 기존 재생 중지
+                                            window.speechSynthesis.cancel();
+                                            
+                                            const utterance = new SpeechSynthesisUtterance(fullText);
+                                            utterance.lang = 'ko-KR';
+                                            utterance.rate = 0.9;  // 속도 약간 느리게
+                                            utterance.pitch = 1.0;
+                                            utterance.volume = 1.0;
+                                            
+                                            window.speechSynthesis.speak(utterance);
+                                        } else {
+                                            alert('이 브라우저는 음성 읽기를 지원하지 않습니다.');
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: '1px solid white',
+                                        borderRadius: '4px',
+                                        color: 'white',
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        padding: '4px 8px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                    title="음성으로 듣기"
+                                >
+                                    듣기
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setShowPopup(false);
+                                        // TTS 중지
+                                        if ('speechSynthesis' in window) {
+                                            window.speechSynthesis.cancel();
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'white',
+                                        fontSize: '18px',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        lineHeight: 1
+                                    }}
+                                >
+                                    ×
+                                </button>
+                            </div>
                         </div>
                         
                         {/* 컨텐츠 */}
