@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Any, Deque, Tuple
 from collections import deque, defaultdict
 import numpy as np
 
-# Pydantic 모델 임포트
 from models.schemas import (
     GazePoint,
     FixationData,
@@ -19,18 +18,14 @@ from models.schemas import (
     ReadingDataResponse
 )
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add parent directory to path to import text_simplifier
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-# ai_model_service의 fin_simplifier 사용
 TEXT_SIMPLIFIER_AVAILABLE = False
 FinancialTextSimplifier = None
 
-# eyetrack 모듈 import (기존 코드 재사용)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
 
 try:
@@ -54,15 +49,13 @@ except ImportError as e:
     FixationDetector = None
 
 class EyeTrackingService:
-    """시선 추적 및 분석을 위한 서비스 클래스"""
+    """시선 추적 및 분석 서비스"""
     
     def __init__(self):
-        # 기존 분석기 초기화
         self.analyzer = ComprehensionAnalyzer() if AI_MODELS_AVAILABLE and ComprehensionAnalyzer else None
         self.monitor = RealTimeComprehensionMonitor() if AI_MODELS_AVAILABLE and RealTimeComprehensionMonitor else None
         self.session_data = {}  # consultation_id별 세션 데이터
 
-        # 실시간 시선추적 컴포넌트 초기화
         if EYETRACK_MODULES_AVAILABLE:
             try:
                 self.reading_data_collectors: Dict[str, Any] = {}  # consultation_id별 collector
@@ -76,26 +69,18 @@ class EyeTrackingService:
             self.reading_data_collectors = {}
             self.gaze_tracker = None
 
-        # 시선 추적 관련 초기화
         self.fixation_threshold = 0.02  # 고정점 감지 임계값 (화면 크기의 2%)
         self.min_fixation_duration = timedelta(seconds=0.1)  # 최소 고정 시간
         self.max_fixation_duration = timedelta(seconds=1.0)  # 최대 고정 시간
         self.gaze_history_window = timedelta(seconds=5.0)  # 시선 이력 유지 시간
         
-        # AI 모델 서비스 사용 (ai_model_service의 fin_simplifier)
         self.text_simplifier = None  # ai_model_service를 직접 사용
     
     def get_text_difficulty(self, section_text: str) -> float:
-        """[DEPRECATED] AI 모델 서비스를 사용하세요"""
-        # TODO: 제거 예정 - ai_model_manager.analyze_text() 사용
-        
-        # 어려운 금융 용어들 (확장)
+        """텍스트 난이도 분석"""
         difficult_financial_terms = [
-            # 기본 금융 용어
             '중도해지', '우대금리', '예금자보호', '만기자동연장', '복리', '단리',
-            # 세금 관련
             '세액공제', '원천징수', '과세표준', '소득공제', '비과세',
-            # 투자 관련
             '금융투자상품', '파생결합증권', '환매조건부채권', '신탁', '수익증권',
             '펀드', '위험등급', '손실가능성', '원금보장', '변동성', '유동성',
             # 대출 관련

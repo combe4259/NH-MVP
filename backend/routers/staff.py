@@ -13,15 +13,10 @@ logger = logging.getLogger(__name__)
 
 @router.get("/realtime/{consultation_id}", response_model=StaffMonitoringResponse)
 async def get_realtime_monitoring_data(consultation_id: UUID4):
-    """
-    특정 상담의 실시간 모니터링 데이터 조회
-    
-    직원이 고객의 이해도와 상태를 실시간으로 모니터링할 수 있는 API입니다.
-    """
+    """특정 상담의 실시간 모니터링 데이터"""
     try:
         conn = await get_db_connection()
         
-        # 최신 분석 데이터 조회
         latest_analysis = await conn.fetchrow("""
             SELECT ra.*, c.product_type, cu.name as customer_name
             FROM reading_analysis ra
@@ -41,11 +36,9 @@ async def get_realtime_monitoring_data(consultation_id: UUID4):
         
         await release_db_connection(conn)
         
-        # 개입 필요 여부 판단
         confusion_prob = float(latest_analysis['confusion_probability'] or 0)
         needs_intervention = confusion_prob > 0.7
         
-        # 알림 메시지 생성
         alert_message = None
         if needs_intervention:
             if confusion_prob > 0.8:
@@ -53,7 +46,6 @@ async def get_realtime_monitoring_data(consultation_id: UUID4):
             else:
                 alert_message = f"⚠️ 주의: {latest_analysis['customer_name']} 고객이 현재 내용을 이해하기 어려워하고 있습니다. 도움이 필요할 수 있습니다."
         
-        # 세션 전체 요약 가져오기
         session_summary = eyetrack_service.get_session_summary(consultation_id)
         
         return StaffMonitoringResponse(
@@ -80,7 +72,7 @@ async def get_realtime_monitoring_data(consultation_id: UUID4):
 
 @router.get("/dashboard/overview")
 async def get_dashboard_overview():
-    """직원 대시보드 개요 정보 (Supabase 연동)"""
+    """직원 대시보드 개요 정보"""
     try:
         from supabase import create_client
         import os

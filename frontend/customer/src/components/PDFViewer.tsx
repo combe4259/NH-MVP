@@ -49,7 +49,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                 });
                 
                 if (textRegions.length > 0) {
-                    console.log(`✅ PDF 텍스트 영역 추출 완료: ${textRegions.length}개`);
                     onPdfLoaded(textRegions);
                 } else {
                     setTimeout(extractTextRegions, 1000);
@@ -197,7 +196,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                     // 두 번째 문장 밑줄 키워드
                     '남기시는', '경우,', '추후', '해당', '내용과', '관련한', '가', '어려울', '수', '있습니다'
                 ];
-                console.log('🎯 하이라이트 적용:', keywords);
                 highlight(keywords);
             }, 1500);
         }
@@ -205,7 +203,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
 
     const handleDocumentLoad = useCallback(() => {
         setPdfLoaded(true);
-        console.log('📄 PDF 로드 완료');
     }, []);
 
     useEffect(() => {

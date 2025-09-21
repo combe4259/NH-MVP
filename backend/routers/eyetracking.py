@@ -11,7 +11,7 @@ from typing import Optional
 from models.database import get_db_connection, release_db_connection
 from services.eyetrack_service import eyetrack_service
 
-# 얼굴 분석 서비스 import (CNN-LSTM 버전)
+# 얼굴 분석 서비스
 try:
     from services.face_service import face_service
     FACE_SERVICE_AVAILABLE = True
@@ -19,7 +19,7 @@ except ImportError:
     FACE_SERVICE_AVAILABLE = False
     face_service = None
 
-# 텍스트 분석 서비스 import (조건부)
+# 텍스트 분석 서비스
 try:
     import sys
     import os
@@ -36,15 +36,11 @@ logger = logging.getLogger(__name__)
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 
-# 디버깅: API 키 확인
 if not supabase_key:
     logger.warning("SUPABASE_SERVICE_KEY가 설정되지 않았습니다")
-else:
-    logger.info(f"Supabase 키 로드됨: {supabase_key[:10]}...")
 
 supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
-# 통합 분석 요청 모델
 class ComprehensiveAnalysisRequest(BaseModel):
     consultation_id: UUID4
     customer_id: UUID4
@@ -53,7 +49,6 @@ class ComprehensiveAnalysisRequest(BaseModel):
     reading_time: float
     gaze_data: Optional[Dict[str, Any]] = None
 
-# 통합 분석 응답 모델
 class ComprehensiveAnalysisResponse(BaseModel):
     overall_difficulty: float
     confusion_probability: float
@@ -79,19 +74,14 @@ async def analyze_reading(data: ReadingData):
     어려워하는 부분에 대한 AI 설명을 제공합니다.
     """
     try:
-        # 입력 데이터 검증 (빈 텍스트 허용 - 시선에서 추출)
-        # if not data.section_text.strip():
-        #     raise HTTPException(status_code=400, detail="섹션 텍스트가 비어있습니다.")
         
         if data.reading_time <= 0:
             raise HTTPException(status_code=400, detail="읽기 시간은 양수여야 합니다.")
         
         logger.info(f"분석 시작: 상담ID={data.consultation_id}, 섹션={data.current_section}")
         
-        # PDF 텍스트 영역이 있으면 시선 데이터와 매핑
         actual_text = data.section_text if data.section_text else ""
         
-        # 텍스트가 비어있거나 PDF 텍스트 영역이 있으면 시선에서 추출
         if (not actual_text or data.pdf_text_regions) and data.gaze_data and 'raw_points' in data.gaze_data:
             try:
                 import sys
@@ -99,11 +89,9 @@ async def analyze_reading(data: ReadingData):
                 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
                 from pdf_coordinate_mapper import PDFCoordinateMapper
                 
-                # PDF 텍스트 영역 정보 로깅
                 logger.info(f"PDF 텍스트 영역 수신: {len(data.pdf_text_regions) if data.pdf_text_regions else 0}개")
                 logger.info(f"시선 포인트 수신: {len(data.gaze_data.get('raw_points', []))}개")
                 
-                # 매퍼 초기화 및 텍스트 영역 로드
                 mapper = PDFCoordinateMapper()
                 if data.pdf_text_regions:
                     mapper.load_pdf_text_regions(data.pdf_text_regions)
@@ -111,12 +99,10 @@ async def analyze_reading(data: ReadingData):
                 else:
                     logger.warning("PDF 텍스트 영역이 없음")
                 
-                # 마지막 시선 포인트에서 텍스트 추출
                 if data.gaze_data['raw_points']:
                     last_point = data.gaze_data['raw_points'][-1]
                     logger.info(f"시선 좌표: x={last_point['x']}, y={last_point['y']}")
                     
-                    # 첫 번째 텍스트 영역의 좌표 확인 (디버깅)
                     if mapper.text_regions.get(1):
                         first_region = mapper.text_regions[1][0]
                         logger.info(f"첫 텍스트 영역 범위: {first_region.bbox}, 텍스트: {first_region.text[:20]}...")
@@ -129,15 +115,13 @@ async def analyze_reading(data: ReadingData):
                     )
                     if text_match:
                         actual_text = text_match.matched_text
-                        logger.info(f"✅ 시선 위치 텍스트 매칭 성공: {actual_text[:50]}...")
                     else:
-                        logger.warning(f"⚠️ 시선 좌표({last_point['x']}, {last_point['y']})에서 텍스트 매칭 실패")
-                        # 가장 가까운 텍스트 영역 찾기 (디버깅용)
+                        logger.warning(f"시선 좌표({last_point['x']}, {last_point['y']})에서 텍스트 매칭 실패")
                         if mapper.text_regions.get(1):
                             import math
                             min_dist = float('inf')
                             closest_text = ""
-                            for region in mapper.text_regions[1][:5]:  # 처음 5개만 확인
+                            for region in mapper.text_regions[1][:5]:
                                 center_x = (region.bbox[0] + region.bbox[2]) / 2
                                 center_y = (region.bbox[1] + region.bbox[3]) / 2
                                 dist = math.sqrt((last_point['x'] - center_x)**2 + (last_point['y'] - center_y)**2)
@@ -148,7 +132,6 @@ async def analyze_reading(data: ReadingData):
             except Exception as e:
                 logger.error(f"텍스트 매핑 실패: {e}", exc_info=True)
         
-        # 아이트래킹 서비스로 분석 수행 (추출된 텍스트 사용)
         analysis_result = await eyetrack_service.analyze_reading_session(
             consultation_id=data.consultation_id,
             section_name=data.current_section,
@@ -158,59 +141,46 @@ async def analyze_reading(data: ReadingData):
             face_data=data.face_analysis  # 프론트엔드에서 받은 얼굴 분석 데이터 전달
         )
         
-        # 데이터베이스 저장 건너뛰기 (사용하지 않음)
         logger.info(f"분석 완료 - DB 저장 생략: consultation_id={data.consultation_id}")
         
-        # 통합 분석 결과에서 혼란도 및 간소화 정보 추출
         logger.info(f"분석 결과 키: {analysis_result.keys()}")
         
-        # 얼굴 분석 confusion (프론트엔드에서 전송)
         face_confusion = 0.0
         if data.face_analysis:
             if isinstance(data.face_analysis, dict):
                 face_confusion = data.face_analysis.get('confusion_probability', 0.0)
             logger.info(f"프론트엔드 얼굴 confusion: {face_confusion:.2f}")
         
-        # 통합 분석 결과의 confusion (텍스트+얼굴+시선 통합)
-        # analysis_result에는 이미 통합된 confusion이 있음
         integrated_confusion = analysis_result.get('confusion_probability', 0.0)
         
-        # 최종 confusion 값 (통합 분석 사용)
         final_confusion = integrated_confusion
         
         logger.info(f"혼란도 분석 - 얼굴: {face_confusion:.2f}, 통합: {integrated_confusion:.2f}")
         
-        # AI 도우미 필요 여부 (confusion > 0.3)
         needs_ai = final_confusion > 0.3
         
-        # AI 간소화 텍스트
         ai_explanation = analysis_result.get('ai_explanation', '')
         if needs_ai and not ai_explanation:
             ai_explanation = "이 부분이 어려우실 수 있습니다. 천천히 읽어보시고 궁금한 점은 문의해주세요."
         
         logger.info(f"최종 분석: confusion={final_confusion:.2f}, AI필요={needs_ai}")
         
-        # 프론트엔드 응답
         response = {
             "status": "analyzed",
             "confusion_probability": final_confusion,  # 통합 confusion 값
             "difficulty_score": analysis_result.get('difficulty_score', 0.5),
             "comprehension_level": analysis_result.get('comprehension_level', 'medium'),
             
-            # AI 도우미 트리거 (중요!)
             "needs_ai_assistance": needs_ai,
             "ai_explanation": ai_explanation,
             
-            # 텍스트 분석 결과 (하이라이트용)
             "difficult_terms": analysis_result.get('difficult_terms', []),
             "confused_sentences": analysis_result.get('confused_sentences', []),
-            "confused_sentences_detail": analysis_result.get('confused_sentences_detail', []),  # 상세 정보
+            "confused_sentences_detail": analysis_result.get('confused_sentences_detail', []),
             "detailed_explanations": analysis_result.get('detailed_explanations', {}),
             
-            # 추천사항
             "recommendations": analysis_result.get('recommendations', []),
 
-            # 메타데이터
             "analysis_metadata": analysis_result.get('analysis_metadata', {}),
             "timestamp": datetime.now().isoformat(),
             "error_message": analysis_result.get('error_message')
