@@ -1,7 +1,6 @@
 import sys
 import os
 import asyncio
-from datetime import datetime, timezone
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -27,13 +26,9 @@ logger = logging.getLogger(__name__)
 # Add parent directory to path to import text_simplifier
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-try:
-    from text_simplifier_krfinbert_kogpt2 import FinancialTextSimplifier
-    TEXT_SIMPLIFIER_AVAILABLE = True
-except ImportError as e:
-    logger.warning("Warning: text_simplifier 모듈을 찾을 수 없습니다. %s", str(e))
-    TEXT_SIMPLIFIER_AVAILABLE = False
-    FinancialTextSimplifier = None
+# ai_model_service의 fin_simplifier 사용
+TEXT_SIMPLIFIER_AVAILABLE = False
+FinancialTextSimplifier = None
 
 # eyetrack 모듈 import (기존 코드 재사용)
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'eyetrack'))
@@ -87,24 +82,12 @@ class EyeTrackingService:
         self.max_fixation_duration = timedelta(seconds=1.0)  # 최대 고정 시간
         self.gaze_history_window = timedelta(seconds=5.0)  # 시선 이력 유지 시간
         
-        # text simplifier 실행
-        try:
-            if TEXT_SIMPLIFIER_AVAILABLE and FinancialTextSimplifier:
-                self.text_simplifier = FinancialTextSimplifier()
-                # 모델 실행
-                model_path = "./financial_simplifier_model"
-                if os.path.exists(model_path):
-                    self.text_simplifier.load_model(model_path)
-                logger.info("FinancialTextSimplifier 실행 완료")
-            else:
-                logger.info("FinancialTextSimplifier 사용 불가 - 의존성 부족")
-                self.text_simplifier = None
-        except Exception as e:
-            logger.error(f"FinancialTextSimplifier 실행 실패: {str(e)}")
-            self.text_simplifier = None
+        # AI 모델 서비스 사용 (ai_model_service의 fin_simplifier)
+        self.text_simplifier = None  # ai_model_service를 직접 사용
     
     def get_text_difficulty(self, section_text: str) -> float:
-        """한국어 금융 약관 텍스트의 난이도 분석 (기존 로직 개선)"""
+        """[DEPRECATED] AI 모델 서비스를 사용하세요"""
+        # TODO: 제거 예정 - ai_model_manager.analyze_text() 사용
         
         # 어려운 금융 용어들 (확장)
         difficult_financial_terms = [
@@ -269,70 +252,95 @@ class EyeTrackingService:
         )
     
     async def analyze_reading_session(self, consultation_id: str, section_name: str, 
-                                    section_text: str, reading_time: float,
+                                    section_text: str, reading_time: float, 
                                     gaze_data: Optional[Dict] = None,
-                                    face_frame: Optional[np.ndarray] = None) -> Dict:
-        """읽기 세션 분석 (메인 API 함수) - AI 모델 우선 사용"""
-        
-        try:
-            # AI 모델 사용 가능시 AI 분석 우선
-            if AI_MODEL_AVAILABLE and ai_model_manager:
-                ai_result = await ai_model_manager.analyze_text(section_text)
-                difficulty_score = ai_result.get('difficulty_score', 0.5)
-                ai_explanation = ai_result.get('ai_explanation', '')
-                confused_sentences = [s.get('sentence_id', 0) for s in ai_result.get('confused_sections', [])]
-                
-                # 얼굴 혼란도 분석 (face_frame이 있을 때만)
-                face_confusion = {"confused": False, "probability": 0.0}
-                if face_frame is not None and hasattr(ai_model_manager, 'hf_models'):
-                    if ai_model_manager.hf_models:
-                        try:
-                            face_confusion = await ai_model_manager.hf_models.analyze_confusion_from_face(face_frame)
-                        except Exception as e:
-                            print(f"얼굴 분석 오류: {e}")
-            else:
-                # Fallback: 기존 로직 사용
-                difficulty_score = self.get_text_difficulty(section_text)
-                confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
-                ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
-                face_confusion = {"confused": False, "probability": 0.0}
-                                    gaze_data: Optional[Dict] = None) -> Dict[str, Any]:
+                                    face_data: Optional[Dict] = None) -> Dict[str, Any]:
         """읽기 세션 분석 (메인 API 함수)"""
         
         try:
-            # 1. 텍스트 난이도 분석
-            difficulty_score = self.get_text_difficulty(section_text)
+            # AI 모델 서비스 사용
+            from services.ai_model_service import ai_model_manager
+            from services.integrated_analysis_service import integrated_analyzer
             
-            # 2. 혼란도 계산
-            confusion_probability = self.calculate_confusion_probability(
-                difficulty_score, reading_time, section_length=len(section_text)
+            # 1. 텍스트 난이도 분석
+            ai_result = await ai_model_manager.analyze_text(section_text)
+            difficulty_score = ai_result.get('difficulty_score', 0.5)
+            
+            # 2. 통합 분석 서비스 호출
+            integrated_result = await integrated_analyzer.analyze_integrated(
+                consultation_id=consultation_id,
+                section_name=section_name,
+                section_text=section_text,
+                text_difficulty=difficulty_score,
+                face_data=face_data,
+                gaze_data=gaze_data,
+                reading_time=reading_time
             )
             
-            # 3. 어려운 문장 식별
-            confused_sentences = self.identify_confused_sentences(section_text, difficulty_score)
+            # 3. AI 간소화가 필요한 경우
+            ai_explanation = ''
+            if integrated_result['should_simplify_text']:
+                try:
+                    simplified = await ai_model_manager.hf_models.simplify_text(section_text)
+                    ai_explanation = f"**쉽게 설명해드릴게요:**\n{simplified}"
+                    logger.info(f"문장 간소화 수행: {section_name}")
+                except Exception as e:
+                    logger.error(f"간소화 실패: {e}")
+                    ai_explanation = ai_result.get('ai_explanation', '')
             
-            # 4. AI 설명 생성
-            ai_explanation = self.generate_ai_explanation(section_text, confused_sentences)
+            confused_sections = ai_result.get('confused_sections', [])
             
-            # 5. 이해도 레벨 결정
-            if confusion_probability > 0.7:
-                comprehension_level = "low"
+            # 4. 통합 분석 결과 사용
+            confusion_probability = integrated_result['integrated_confusion']
+            comprehension_level = integrated_result['comprehension_level']
+            
+            # 5. 상태 결정
+            if comprehension_level == "low":
                 status = "confused"
-            elif confusion_probability > 0.4:
-                comprehension_level = "medium"
+            elif comprehension_level == "medium":
                 status = "moderate"
             else:
-                comprehension_level = "high"
                 status = "good"
             
-            # 6. 추천사항 생성
-            recommendations = self._generate_recommendations(
-                confusion_probability, difficulty_score, reading_time
-            )
-
-            # 7. 텍스트 분석 (문장 + 단어 동시 분석)
-            analysis_data = {}
-            if self.hybrid_analyzer:
+            # 6. 어려운 문장 추출 (현재 읽고 있는 문장)
+            confused_sentences = []  # 문장 인덱스만 저장 (스키마 요구사항)
+            confused_sentences_detail = []  # 상세 정보는 별도 저장
+            
+            # 텍스트가 비어있으면 기본 PDF 텍스트 사용
+            if not section_text or len(section_text.strip()) < 10:
+                section_text = "계약기간 동안 약정이율로 계산하여 만기에 일시지급"
+                logger.info(f"텍스트 없음 - 기본 텍스트 사용: {section_text}")
+            
+            # confusion이 높거나 텍스트에 금융 용어가 있으면 추가
+            if confusion_probability > 0.15:
+                # 문장을 마침표로 분리
+                sentences = section_text.replace('!', '.').replace('?', '.').split('.')
+                sentences = [s.strip() for s in sentences if s.strip()]
+                
+                # 문장이 없으면 전체 텍스트를 하나의 문장으로
+                if not sentences:
+                    sentences = [section_text]
+                
+                # 모든 문장을 confused로 추가
+                for idx, sentence in enumerate(sentences):
+                    if len(sentence) > 5:  # 짧은 문장도 포함
+                        confused_sentences.append(idx)  # 인덱스만 추가
+                        confused_sentences_detail.append({
+                            'sentence': sentence,
+                            'sentence_id': f'sentence_{idx}',
+                            'difficulty_score': max(confusion_probability, 0.5),  # 최소 0.5
+                            'simplified_explanation': ai_explanation if ai_explanation else "이 부분을 쉽게 설명해드리겠습니다."
+                        })
+                
+                logger.info(f"Confused sentences 추가: {len(confused_sentences)}개")
+            
+            # 6. 추천사항 생성 (필요시)
+            recommendations = []
+            if comprehension_level == "low":
+                recommendations.append("텍스트가 어려워 보입니다. AI 도우미가 간소화해드립니다.")
+            elif comprehension_level == "medium":
+                recommendations.append("이해에 도움이 필요하시면 AI 도우미를 활용하세요.")
+            
             # 7. 세션 데이터 업데이트
             if consultation_id not in self.session_data:
                 self.session_data[consultation_id] = {
@@ -348,65 +356,66 @@ class EyeTrackingService:
                 'timestamp': datetime.now(timezone.utc)
             })
             
-            # 7. 하이브리드 분석 추가
+            # 7. 하이브리드 분석 추가 + 어려운 용어 추출
             hybrid_data = {}
+            
+            # 기본 어려운 금융 용어 추출 (무조건 하이라이트용)
+            difficult_terms_list = []
+            detailed_explanations = {}
+            
+            # 텍스트에서 어려운 용어 찾기
+            financial_terms = {
+                '약정이율': '은행과 약속한 이자율',
+                '만기': '예금 계약이 끝나는 날',
+                '일시지급': '한 번에 모두 지급하는 것',
+                '계약기간': '예금을 맡기기로 한 기간',
+                '압류': '법원이 재산을 못 쓰게 막는 것',
+                '가압류': '임시로 재산을 못 쓰게 막는 것',
+                '질권설정': '담보로 잡히는 것',
+                '중도해지': '만기 전에 예금을 찾는 것',
+                '원금': '처음 맡긴 돈',
+                '이자': '돈을 맡긴 대가로 받는 돈'
+            }
+            
+            for term, explanation in financial_terms.items():
+                if term in section_text:
+                    difficult_terms_list.append(term)
+                    detailed_explanations[term] = explanation
+            
+            # 하이브리드 분석 시도
             if hybrid_analyzer:
                 try:
                     hybrid_result = hybrid_analyzer.analyze_text_hybrid(section_text)
+                    # 하이브리드 결과가 있으면 추가
+                    if hybrid_result.difficult_terms:
+                        difficult_terms_list.extend(hybrid_result.difficult_terms)
+                    if hybrid_result.detailed_explanations:
+                        detailed_explanations.update(hybrid_result.detailed_explanations)
+                    
                     hybrid_data = {
-                        "difficult_terms": hybrid_result.difficult_terms,
+                        "difficult_terms": list(set(difficult_terms_list)),  # 중복 제거
                         "underlined_sections": hybrid_result.underlined_sections,
-                        "detailed_explanations": hybrid_result.detailed_explanations
+                        "detailed_explanations": detailed_explanations
                     }
                 except Exception as e:
-                    print(f"하이브리드 분석 실패: {e}")
+                    logger.error(f"하이브리드 분석 실패: {e}")
                     hybrid_data = {
-                        "difficult_terms": [],
+                        "difficult_terms": difficult_terms_list,
                         "underlined_sections": [],
-                        "detailed_explanations": {}
+                        "detailed_explanations": detailed_explanations
                     }
             else:
+                # 하이브리드 분석기가 없어도 기본 용어는 제공
                 hybrid_data = {
-                    "difficult_terms": [],
+                    "difficult_terms": difficult_terms_list,
                     "underlined_sections": [],
-                    "detailed_explanations": {}
+                    "detailed_explanations": detailed_explanations
                 }
-            
-            # 8. 세션 데이터 업데이트
-            if consultation_id not in self.session_data:
-                self.session_data[consultation_id] = {
-                    'sections': [],
-                    'start_time': datetime.now(timezone.utc)
-                }
-            
-            # 세션 데이터 업데이트 (하이브리드 결과 포함)
-            section_data = {
-                'section_name': section_name,
-                'difficulty_score': difficulty_score,
-                'confusion_probability': confusion_probability,
-                'comprehension_level': comprehension_level,
-                'timestamp': datetime.now(timezone.utc)
-            }
-
-            # 텍스트 분석 결과도 세션에 저장
-            if analysis_data:
-                section_data.update({
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-                # 세션 레벨에서도 업데이트
-                self.session_data[consultation_id].update({
-                    'current_section': section_name,
-                    'difficult_terms': analysis_data.get('difficult_terms', []),
-                    'detailed_explanations': analysis_data.get('detailed_explanations', {})
-                })
-
-            self.session_data[consultation_id]['sections'].append(section_data)
             
             result = {
                 "status": status,
-                "confused_sentences": confused_sentences,
+                "confused_sentences": confused_sentences,  # List[int] - 스키마 준수
+                "confused_sentences_detail": confused_sentences_detail,  # 상세 정보 (커스텀 필드)
                 "ai_explanation": ai_explanation,
                 "difficulty_score": round(difficulty_score, 2),
                 "confusion_probability": round(confusion_probability, 2),

@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 
 from services.face_service import face_service
+from services.face_analysis_service import face_analyzer
 from models.schemas import APIResponse
 
 router = APIRouter()
@@ -95,6 +96,36 @@ async def analyze_face_frame(request: FaceAnalysisRequest):
             status_code=500,
             detail=f"얼굴 분석 중 오류 발생: {str(e)}"
         )
+
+@router.post("/analyze")
+async def analyze_frame_sequence(request: Dict[str, Any]):
+    """
+    30프레임 시퀀스 분석 (CNN-LSTM)
+    
+    프론트엔드 EyeTracker.tsx에서 전송하는 30프레임을 받아
+    CNN-LSTM 모델로 confusion 레벨 분석
+    """
+    try:
+        frames = request.get("frames", [])
+        sequence_length = request.get("sequence_length", 30)
+        
+        logger.info(f"CNN-LSTM 분석 요청: {len(frames)}프레임")
+        
+        # face_analyzer의 analyze_frames 메서드 호출
+        result = await face_analyzer.analyze_frames(frames)
+        
+        logger.info(f"CNN-LSTM 분석 결과: confusion={result.get('confusion')}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"CNN-LSTM 프레임 분석 실패: {e}")
+        return {
+            "confusion": 1,
+            "confusion_probability": 0.5,
+            "confidence": 0.5,
+            "error": str(e)
+        }
 
 @router.get("/session/{consultation_id}/emotion-summary")
 async def get_emotion_summary(consultation_id: str):

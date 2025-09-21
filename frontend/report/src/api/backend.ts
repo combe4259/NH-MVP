@@ -5,7 +5,7 @@ const API_BASE_URL = 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000,  // 10초 → 30초로 증가 (모델 첫 실행 시 시간 필요)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -92,6 +92,14 @@ export const reportAPI = {
   // 전체 통계 조회
   async getOverallStats() {
     const response = await api.get('/api/eyetracking/stats/realtime');
+    return response.data;
+  },
+
+  // 자연어 검색으로 상담 내역 조회
+  async searchConsultationsWithNL(query: string): Promise<{ consultations: ConsultationSummary[], sql_query?: string }> {
+    const response = await api.post('/api/consultations/search', {
+      natural_language_query: query
+    });
     return response.data;
   }
 };

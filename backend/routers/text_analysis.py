@@ -15,12 +15,9 @@ except ImportError as e:
     print(f"Warning: hybrid_analyzer 모듈을 찾을 수 없습니다: {e}")
     HYBRID_ANALYZER_AVAILABLE = False
 
-try:
-    from text_simplifier_krfinbert_kogpt2 import FinancialTextSimplifier
-    TEXT_SIMPLIFIER_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: text_simplifier 모듈을 찾을 수 없습니다: {e}")
-    TEXT_SIMPLIFIER_AVAILABLE = False
+# AI 모델 서비스 사용 (text_simplifier_krfinbert_kogpt2 대신)
+from services.ai_model_service import ai_model_manager
+TEXT_SIMPLIFIER_AVAILABLE = True
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -55,16 +52,8 @@ if HYBRID_ANALYZER_AVAILABLE:
 else:
     hybrid_analyzer = None
 
-if TEXT_SIMPLIFIER_AVAILABLE:
-    try:
-        text_simplifier = FinancialTextSimplifier()
-        # 모델이 학습되지 않은 경우를 위한 간단한 테스트
-        print("텍스트 간소화 모델 초기화 중...")
-    except Exception as e:
-        print(f"텍스트 간소화 모델 초기화 실패: {e}")
-        text_simplifier = None
-else:
-    text_simplifier = None
+# AI 모델은 ai_model_manager를 통해 사용
+text_simplifier = ai_model_manager
 
 @router.post("/analyze-text", response_model=TextAnalysisResponse)
 async def analyze_text(request: TextAnalysisRequest):
@@ -126,11 +115,12 @@ async def analyze_text(request: TextAnalysisRequest):
 async def simplify_sentence(sentence: str) -> str:
     """문장을 간소화하여 설명 생성"""
 
-    if text_simplifier:
+    if text_simplifier and text_simplifier.current_model:
         try:
-            # 텍스트 간소화 모델 사용
-            simplified = text_simplifier.simplify_text(sentence)
-            return simplified
+            # AI 모델 서비스를 통한 텍스트 간소화
+            if hasattr(text_simplifier.current_model, 'simplify_text'):
+                simplified = await text_simplifier.current_model.simplify_text(sentence)
+                return simplified
         except Exception as e:
             logger.warning(f"텍스트 간소화 실패: {e}, 폴백 사용")
 

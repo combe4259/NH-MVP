@@ -30,7 +30,7 @@ class LocalDAiSEEConfusionDataset(Dataset):
     """로컬 DAiSEE 데이터셋 - Confusion 이진 분류용"""
     
     def __init__(self, 
-                 data_root: str = "/Users/inter4259/Desktop/DAiSEE",
+                 data_root: str = "/Users/inter4259/Desktop/NH/DAiSEE",
                  subset: str = 'Train',
                  sequence_length: int = 30,
                  image_size: Tuple[int, int] = (112, 112),

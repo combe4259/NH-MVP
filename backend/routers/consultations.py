@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
 import logging
-from pydantic import UUID4
+from pydantic import UUID4, BaseModel
 import json
 import uuid
 from datetime import datetime, timezone
@@ -11,6 +11,10 @@ from models.schemas import (
     CustomerCreate, CustomerResponse, APIResponse
 )
 from models.database import get_db_connection, release_db_connection
+
+# 자연어 검색 요청 모델
+class NaturalLanguageSearchRequest(BaseModel):
+    natural_language_query: str
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -173,7 +177,7 @@ async def get_consultation_report(consultation_id: UUID4):
             detailed_info = json.loads(consultation['detailed_info'])
 
         return ConsultationReportResponse(
-            consultation_id=consultation_id,
+            consultation_id=str(consultation_id),
             customer_name=consultation['customer_name'],
             product_type=consultation['product_type'],
             product_details=json.loads(consultation['product_details']),
@@ -376,3 +380,167 @@ async def get_customer(customer_id: UUID4):
     except Exception as e:
         logger.error(f"고객 조회 실패: {e}")
         raise HTTPException(status_code=500, detail="고객 조회 중 오류가 발생했습니다.")
+
+@router.post("/search")
+async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
+    """
+    자연어 검색을 통한 상담 내역 조회
+    HuggingFace의 NHSQLNL 모델을 사용하여 자연어를 SQL로 변환
+    """
+    try:
+        from services.nl_to_sql_service import NLtoSQLService
+        
+        # NL to SQL 서비스 초기화
+        nl_service = NLtoSQLService()
+        
+        # 자연어를 SQL로 변환
+        sql_query = await nl_service.convert_to_sql(request.natural_language_query)
+        
+        logger.info(f"[NL검색] 자연어 쿼리: {request.natural_language_query}")
+        logger.info(f"[NL검색] 변환된 SQL: {sql_query}")
+        logger.info(f"[NL검색] SQL 길이: {len(sql_query)}")
+        
+        conn = await get_db_connection()
+        
+        # SQL 쿼리 실행
+        # 보안을 위해 SELECT 쿼리만 허용
+        if not sql_query.strip().upper().startswith("SELECT"):
+            raise HTTPException(status_code=400, detail="SELECT 쿼리만 허용됩니다.")
+        
+        # 쿼리 실행
+        consultations = await conn.fetch(sql_query)
+        
+        await release_db_connection(conn)
+        
+        # 결과 포맷팅
+        consultation_list = []
+        for consultation in consultations:
+            consultation_list.append({
+                "consultation_id": str(consultation.get('id', '')),
+                "customer_id": str(consultation.get('customer_id', '')),
+                "customer_name": consultation.get('customer_name', '알 수 없음'),
+                "product_type": consultation.get('product_type', ''),
+                "consultation_phase": consultation.get('consultation_phase', ''),
+                "status": consultation.get('status', ''),
+                "start_time": consultation.get('start_time').isoformat() if consultation.get('start_time') else None,
+                "end_time": consultation.get('end_time').isoformat() if consultation.get('end_time') else None
+            })
+        
+        return {
+            "consultations": consultation_list,
+            "total_count": len(consultation_list),
+            "natural_language_query": request.natural_language_query,
+            "sql_query": sql_query,  # 디버깅용 (프로덕션에서는 제거 권장)
+            "last_updated": datetime.now().isoformat()
+        }
+        
+    except ImportError:
+        logger.error("NL to SQL 서비스를 불러올 수 없습니다.")
+        # 폴백: 키워드 기반 검색
+        return await fallback_keyword_search(request.natural_language_query)
+        
+    except Exception as e:
+        logger.error(f"자연어 검색 실패: {e}")
+        # 폴백: 키워드 기반 검색
+        return await fallback_keyword_search(request.natural_language_query)
+
+async def fallback_keyword_search(query: str):
+    """키워드 기반 폴백 검색"""
+    try:
+        conn = await get_db_connection()
+        
+        # 키워드 추출
+        query_lower = query.lower()
+        
+        # 기본 쿼리
+        base_query = """
+            SELECT c.*, cu.name as customer_name
+            FROM consultations c
+            JOIN customers cu ON c.customer_id = cu.id
+            WHERE 1=1
+        """
+        
+        params = []
+        conditions = []
+        param_count = 1
+        
+        # 날짜 관련 키워드
+        if "오늘" in query_lower:
+            conditions.append(f"DATE(c.start_time) = CURRENT_DATE")
+        elif "어제" in query_lower:
+            conditions.append(f"DATE(c.start_time) = CURRENT_DATE - INTERVAL '1 day'")
+        elif "지난달" in query_lower:
+            conditions.append(f"DATE_TRUNC('month', c.start_time) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')")
+        elif "이번달" in query_lower:
+            conditions.append(f"DATE_TRUNC('month', c.start_time) = DATE_TRUNC('month', CURRENT_DATE)")
+        
+        # 상품 타입 키워드
+        product_keywords = {
+            "정기예금": "정기예금",
+            "예금": "정기예금",
+            "적금": "적금",
+            "펀드": "펀드",
+            "보험": "보험",
+            "대출": "대출"
+        }
+        
+        for keyword, product_type in product_keywords.items():
+            if keyword in query_lower:
+                conditions.append(f"c.product_type = ${param_count}")
+                params.append(product_type)
+                param_count += 1
+                break
+        
+        # 상태 키워드
+        if "완료" in query_lower:
+            conditions.append(f"c.status = ${param_count}")
+            params.append("completed")
+            param_count += 1
+        elif "진행" in query_lower or "활성" in query_lower:
+            conditions.append(f"c.status = ${param_count}")
+            params.append("active")
+            param_count += 1
+        
+        # 조건 결합
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        base_query += " ORDER BY c.start_time DESC LIMIT 20"
+        
+        # 쿼리 실행
+        consultations = await conn.fetch(base_query, *params)
+        
+        await release_db_connection(conn)
+        
+        # 결과 포맷팅
+        consultation_list = []
+        for consultation in consultations:
+            consultation_list.append({
+                "consultation_id": str(consultation['id']),
+                "customer_id": str(consultation['customer_id']),
+                "customer_name": consultation['customer_name'],
+                "product_type": consultation['product_type'],
+                "consultation_phase": consultation['consultation_phase'],
+                "status": consultation['status'],
+                "start_time": consultation['start_time'].isoformat() if consultation['start_time'] else None,
+                "end_time": consultation['end_time'].isoformat() if consultation['end_time'] else None
+            })
+        
+        return {
+            "consultations": consultation_list,
+            "total_count": len(consultation_list),
+            "natural_language_query": query,
+            "search_method": "keyword_based",  # 폴백 사용 표시
+            "last_updated": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"키워드 검색 실패: {e}")
+        # 더미 데이터 반환
+        return {
+            "consultations": [],
+            "total_count": 0,
+            "natural_language_query": query,
+            "search_method": "fallback_failed",
+            "last_updated": datetime.now().isoformat()
+        }

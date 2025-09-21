@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from routers import eyetracking, staff, consultations
+from routers import eyetracking, staff, consultations, face_router
 import json
 import asyncio
 from typing import Dict, List
@@ -65,6 +65,7 @@ app.add_middleware(
 app.include_router(eyetracking.router, prefix="/api/eyetracking", tags=["아이트래킹"])
 app.include_router(staff.router, prefix="/api/staff", tags=["직원용"])
 app.include_router(consultations.router, prefix="/api/consultations", tags=["상담관리"])
+app.include_router(face_router.router)  # CNN-LSTM 얼굴 분석
 
 # 텍스트 분석 라우터는 조건부 등록
 if TEXT_ANALYSIS_AVAILABLE:
@@ -222,6 +223,20 @@ async def websocket_endpoint(websocket: WebSocket, consultation_id: str):
                     except:
                         frame = None
                 
+                # 얼굴 분석 데이터 처리
+                face_data = None
+                if frame is not None:
+                    # face_service를 통해 얼굴 분석
+                    try:
+                        from services.face_service import face_service
+                        face_result = await face_service.analyze_face(frame)
+                        face_data = {
+                            'confusion_probability': face_result.get('confusion_detected', 0.0),
+                            'emotions': face_result.get('emotions', {})
+                        }
+                    except Exception as e:
+                        logger.error(f"얼굴 분석 실패: {e}")
+                
                 # 통합 분석 수행
                 analysis_result = await eyetrack_service.analyze_reading_session(
                     consultation_id=consultation_id,
@@ -229,7 +244,7 @@ async def websocket_endpoint(websocket: WebSocket, consultation_id: str):
                     section_text=section_text,
                     reading_time=reading_time,
                     gaze_data=gaze_data,
-                    face_frame=frame  # 얼굴 프레임 추가
+                    face_data=face_data  # 얼굴 분석 데이터 전달
                 )
                 
                 # 분석 결과 전송

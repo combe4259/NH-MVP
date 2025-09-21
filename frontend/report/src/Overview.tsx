@@ -47,22 +47,30 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
     fetchConsultationReport();
   }, [consultationId]);
 
-  // 백엔드 데이터에서 UI용 상세 정보 추출
+  // 백엔드 데이터에서 UI용 상세 정보 추출 (하드코딩)
   const getConsultationDetails = (): ConsultationDetails | null => {
-    if (!consultationReport?.detailed_info) {
-      return null;
-    }
-
-    const dbData = consultationReport.detailed_info;
+    // NH내가Green초록세상적금 실제 상품 정보 기반
     return {
       productInfo: {
-        name: dbData.product_name || '',
-        investment: dbData.investment_type || '',
-        totalAmount: dbData.total_amount || ''
+        name: 'NH내가Green초록세상적금',
+        investment: '자유적립식 (월 1만원~50만원)',
+        totalAmount: '월 30만원 × 24개월'
       },
-      importantItems: dbData.important_items || [],
-      expectedReturn: dbData.expected_return || { period: '', amount: '', profit: '' },
-      todoItems: dbData.todo_items || []
+      importantItems: [
+        {
+          text: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
+          desc: '법원이나 채권자가 계좌를 막으면 돈을 찾을 수 없게 됩니다. 압류는 법원이 재산을 못 쓰게 막는 것, 가압류는 임시로 막는 것, 질권설정은 담보로 잡히는 것입니다.'
+        }
+      ],
+      expectedReturn: {
+        period: '24개월 만기 시 (기본 2.35% + 우대 1.0%)',
+        amount: '7,602,180원',
+        profit: '원금 7,200,000원 + 이자 402,180원 (세전)'
+      },
+      todoItems: [
+        '온실가스 줄이기 실천 서약서 제출하기',
+        '통장 미발급 선택하여 우대금리 0.3% 받기'
+      ]
     };
   };
 
@@ -125,8 +133,8 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
       <div className="px-4 py-6 overflow-y-auto scrollbar-hide" style={{ height: 'calc(100vh - 90px)' }}>
         {/* Title Section */}
         <div className="text-center mb-8">
-          <h2 className="text-xl font-bold text-black mb-2">{consultationReport.product_type} 상담</h2>
-          <p className="text-sm text-gray-500">NH 디지털 상담 • {new Date(consultationReport.start_time).toLocaleDateString('ko-KR')}</p>
+          <h2 className="text-xl font-bold text-black mb-2">NH내가Green초록세상적금 상담</h2>
+          <p className="text-sm text-gray-500">NH농협은행 종로금융센터 • 2025. 9. 16.</p>
         </div>
 
         {/* Product Info */}
@@ -144,7 +152,7 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
             </div>
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">총 투자금액</span>
-              <span className="text-sm text-blue-600 font-bold">{details.productInfo.totalAmount}</span>
+              <span className="text-sm text-green-600 font-bold">{details.productInfo.totalAmount}</span>
             </div>
           </div>
         </div>
@@ -152,13 +160,12 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
         {/* Important Notice */}
         <div className="mb-6">
           <div className="flex items-center mb-3">
-            <span className="text-orange-500 mr-2">⚠️</span>
             <h3 className="text-base font-medium text-black">특별히 확인하신 내용</h3>
           </div>
           
           <div className="space-y-3">
             {details.importantItems.map((item, index) => (
-              <div key={index} className="bg-orange-50 border-l-4 border-orange-500 p-3 rounded-r">
+              <div key={index} className="bg-green-50 border-l-4 border-green-600 p-3 rounded-r">
                 <h4 className="text-sm font-medium text-black mb-1">{item.text}</h4>
                 <p className="text-xs text-gray-600">{item.desc}</p>
               </div>
@@ -169,24 +176,19 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
         {/* Expected Returns */}
         <div className="mb-6">
           <div className="flex items-center mb-3">
-            <span className="text-blue-500 mr-2">📊</span>
             <h3 className="text-base font-medium text-black">예상 수익 시뮬레이션</h3>
           </div>
           
-          <div className="bg-blue-50 rounded-lg p-4 text-center">
+          <div className="bg-green-50 rounded-lg p-4 text-center">
             <p className="text-sm text-gray-600 mb-2">{details.expectedReturn.period}</p>
-            <p className="text-2xl font-bold text-blue-600 mb-1">{details.expectedReturn.amount}</p>
-            <p className="text-sm text-gray-600 mb-4">{details.expectedReturn.profit}</p>
-            <button className="px-4 py-2 border border-blue-300 text-blue-600 rounded-full text-sm">
-              상세 시뮬레이션 보기
-            </button>
+            <p className="text-2xl font-bold text-green-600 mb-1">{details.expectedReturn.amount}</p>
+            <p className="text-sm text-gray-600">{details.expectedReturn.profit}</p>
           </div>
         </div>
 
         {/* Todo List */}
         <div className="mb-6">
           <div className="flex items-center mb-3">
-            <span className="text-orange-500 mr-2">📝</span>
             <h3 className="text-base font-medium text-black">다음에 해야 할 일</h3>
           </div>
           
@@ -214,7 +216,6 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
         {/* Share */}
         <div className="mb-6">
           <div className="flex items-center mb-3">
-            <span className="text-yellow-500 mr-2">📤</span>
             <h3 className="text-base font-medium text-black">가족과 공유하기</h3>
           </div>
           
@@ -222,7 +223,7 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
             <p className="text-sm text-gray-600 text-center mb-4">
               오늘 상담 내용을 가족에게 공유해보세요
             </p>
-            <button className="w-full py-3 bg-yellow-400 text-black rounded-lg text-sm font-medium">
+            <button className="w-full py-3 bg-green-600 text-white rounded-lg text-sm font-medium">
               카카오톡으로 공유
             </button>
           </div>

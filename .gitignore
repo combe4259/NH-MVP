@@ -99,3 +99,5 @@ dmypy.json
 /face/face-comprehension
 /face/model-cache
 /backend/model_cache
+
+CLAUDE.md
