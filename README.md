@@ -75,6 +75,14 @@ text-gaze-tracker/
 - **Axios**: HTTP 클라이언트
 - **React Router**: 라우팅
 
+### 데이터베이스
+- **PostgreSQL**
+-  주요 테이블 구조:
+  - customers: 고객 정보
+  - consultations: 상담 기록 (상품 타입, 상담 단계, 상태 등)
+  - reading_analysis: 시선 추적 및 읽기 분석 데이터 (난이도, 혼란도, 시선데이터)
+  - consultation_summaries: 상담 요약 리포트
+
 ### AI/ML 모델
 - **얼굴 표정 인식**: MobileNetV2 기반 경량 모델
 - **문장 간소화**: KR-FinBert 기반 금융 문장 간소화
