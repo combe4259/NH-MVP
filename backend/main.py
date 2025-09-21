@@ -11,26 +11,21 @@ import base64
 import os
 from models.database import startup_database, shutdown_database
 
-# 텍스트 분석 모듈 임포트 (오류 처리 포함)
+# 텍스트 분석 모듈 임포트
 try:
     from routers import text_analysis
     TEXT_ANALYSIS_AVAILABLE = True
-    print("text_analysis router import success")
 except ImportError as e:
-    print(f"text_analysis router import failed: {e}")
     TEXT_ANALYSIS_AVAILABLE = False
 
-# 얼굴 분석 모듈 임포트 (오류 처리 포함)
+# 얼굴 분석 모듈 임포트
 try:
     from routers import face_analysis
     FACE_ANALYSIS_AVAILABLE = True
-    print("face_analysis router import success")
 except ImportError as e:
-    print(f"face_analysis router import failed: {e}")
     FACE_ANALYSIS_AVAILABLE = False
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# 로그
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI(
@@ -39,47 +34,40 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# 데이터베이스 초기화 이벤트
+# 애플리케이션 시작 시 데이터베이스 연결
 @app.on_event("startup")
 async def startup():
     try:
         await startup_database()
-        print("데이터베이스 연결 성공")
     except Exception as e:
-        print(f"데이터베이스 연결 실패: {e}")
+        logger.error(f"Database connection failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown():
     await shutdown_database()
 
-# CORS 설정 (프론트엔드 연결용)
+# CORS 설정으로 프론트엔드와의 통신 허용
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 개발용
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 라우터 등록
+# API 라우터 등록
 app.include_router(eyetracking.router, prefix="/api/eyetracking", tags=["아이트래킹"])
 app.include_router(staff.router, prefix="/api/staff", tags=["직원용"])
 app.include_router(consultations.router, prefix="/api/consultations", tags=["상담관리"])
-app.include_router(face_router.router)  # CNN-LSTM 얼굴 분석
+app.include_router(face_router.router)
 
-# 텍스트 분석 라우터는 조건부 등록
+# 텍스트 분석 라우터 조건부 등록
 if TEXT_ANALYSIS_AVAILABLE:
     app.include_router(text_analysis.router, prefix="/api/text", tags=["텍스트분석"])
-    print("text_analysis router registered successfully")
-else:
-    print("text_analysis router registration failed - missing dependencies")
 
-# 얼굴 분석 라우터는 조건부 등록
+# 얼굴 분석 라우터 조건부 등록
 if FACE_ANALYSIS_AVAILABLE:
     app.include_router(face_analysis.router, prefix="/api/face", tags=["얼굴분석"])
-    print("face_analysis router registered successfully")
-else:
-    print("face_analysis router registration failed - missing dependencies")
 
 @app.get("/")
 async def root():
