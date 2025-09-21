@@ -274,7 +274,7 @@ class HuggingFaceModels(AIModelInterface):
             
             # Few-shot 예제 하나 추가 (학습 데이터 형식 그대로)
             example_input = "[SCHEMA: consultations: id, customer_id, product_type, start_time, end_time, status] [UTTERANCE: 내 예금 상담 내역]"
-            example_output = "SELECT * FROM consultations WHERE customer_id = :current_user_id AND product_type = '예금' ORDER BY start_time DESC;"
+            example_output = "SELECT * FROM consultations WHERE customer_id = :current_user_id AND product_type = '정기예금' ORDER BY start_time DESC;"
             
             # 현재 쿼리
             current_input = f"[SCHEMA: {simple_schema}] [UTTERANCE: {natural_language_query}]"
@@ -339,11 +339,11 @@ class HuggingFaceModels(AIModelInterface):
             # 예금도 동일하게 처리
             elif "예금" in natural_language_query and "product_type" not in sql_query:
                 if "WHERE" not in sql_query.upper():
-                    sql_query = sql_query.replace("FROM consultations", "FROM consultations WHERE product_type = '예금'")
+                    sql_query = sql_query.replace("FROM consultations", "FROM consultations WHERE product_type = '정기예금'")
                 else:
-                    sql_query = sql_query.replace("WHERE TRUE", "WHERE product_type = '예금'")
+                    sql_query = sql_query.replace("WHERE TRUE", "WHERE product_type = '정기예금'")
                     if "WHERE TRUE" not in sql_query:
-                        sql_query = sql_query + " AND product_type = '예금'"
+                        sql_query = sql_query + " AND product_type = '정기예금'"
             
             # 대출도 처리
             elif "대출" in natural_language_query and "product_type" not in sql_query:

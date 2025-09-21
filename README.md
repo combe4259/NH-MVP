@@ -1,136 +1,159 @@
-# 📊 Text Gaze Tracker - 시선 추적 기반 문맥 이해도 분석
+# NH AI 상담 파트너 '말하지 않아도 알아요'
 
-MediaPipe + OpenCV 기반 실시간 텍스트 시선 추적 및 읽기 이해도 분석 시스템
+## 주요 기능
 
-## 🚀 주요 기능
+### 1. 실시간 이해도 분석
+- 웹캠을 통한 고객 표정 기반 이해도 판단
+- 시선 추적을 통한 읽기 패턴 분석
+- 혼란도 감지 시 자동으로 쉬운 설명 제공
 
-### 핵심 기능
-- **실시간 시선 추적** (MediaPipe Face Mesh)
-- **텍스트 영역 감지** (Tesseract OCR)
-- **시선 고정점(Fixation) 분석**
-- **읽기 패턴 분석** (선형, 스캔, 집중)
-- **읽기 속도 측정** (WPM)
-- **회귀(Regression) 카운트**
-- **히트맵 시각화**
+### 2. 문장 간소화
+- 복잡한 금융 용어를 쉬운 문장으로 자동 변환
+- 문맥을 유지하면서 이해하기 쉬운 문장 생성
+- 음성 안내 지원
 
-### 🆕 신규 기능
-- **문맥 이해도 측정** - 실시간 이해도 점수 (0-100%)
-- **인지 부하 분석** - Cognitive Load 계산
-- **어려운 단어 자동 감지** - 응시 시간 기반
-- **한글 텍스트 지원** - 한국어 문서 분석
+### 3. 자연어 상담 내역 조회
+- "최근에 가입한 예금 상품 보여줘" 같은 자연어 질의 지원
+- SQL 자동 변환 및 데이터 조회
+- 상담/가입 내역 관리
 
-## 설치 방법
-
-```bash
-# 1. 가상환경 활성화
-source venv/bin/activate
-
-# 2. Tesseract 설치 (macOS)
-brew install tesseract
-
-# 3. 의존성 설치
-pip install -r requirements.txt
-```
-
-## 🎯 실행 방법
+### 4. 직원용 대시보드
+- 고객 이해도 실시간 모니터링
+- 상담 진행 상황 추적
+- AI 상담 가이드
 
 
-###  문맥 이해도 측정(이거실행하면됨)
-```bash
-python test_comprehension.py
-```
-- 실시간 이해도 점수
-- 어려운 단어 감지
-- 인지 부하 측정
-
-### 3. 한글 텍스트 테스트
-```bash
-python test_korean_text.py
-```
-- LRU 리스트 구조 예제
-- 한글 시선 추적
-
-### 4. 캘리브레이션
-```bash
-python calibration.py
-```
-- 9-point 캘리브레이션
-- 정확도 향상
-
-## ⌨️ 키보드 컨트롤
-
-| 키 | 기능 |
-|---|------|
-| `Q` | 종료 |
-| `R` | 설정 리셋 |
-| `S` | 세션 저장 |
-| `H` | 히트맵 표시 |
-| `D` | 디버그 모드 |
-| `C` | 화면 클리어 |
-| `W/A/S/D` | 오프셋 조정 |
-| `↑↓←→` | 스케일 조정 |
-
-## 📁 파일 구조
+## 프로젝트 구조
 
 ```
 text-gaze-tracker/
-├── 핵심 모듈
-│   ├── gaze_tracker.py          # 시선 추적 엔진
-│   ├── text_detector.py         # OCR 텍스트 감지
-│   ├── text_gaze_analyzer.py    # 통합 분석
-│   └── comprehension_analyzer.py # 이해도 분석 🆕
-├── 실행 파일
-│   ├── main_improved.py         # 메인 실행 (최신)
-│   ├── test_comprehension.py    # 이해도 측정 🆕
-│   ├── test_korean_text.py      # 한글 테스트 🆕
-│   └── calibration.py           # 캘리브레이션
-└── 설정
-    └── requirements.txt         # 의존성 목록
+│
+├── backend/                    # FastAPI 백엔드 서버
+│   ├── main.py                # FastAPI 앱 진입점
+│   ├── routers/               # API 라우터
+│   │   ├── ai_model.py       # AI 모델  API
+│   │   └── consultation.py   # 상담 API
+│   ├── models/                # 데이터베이스 모델
+│   │   └── consultation.py   # 상담 데이터 모델
+│   ├── services/              # 비즈니스 로직
+│   │   └── ai_model_service.py  # AI 모델 서비스 
+│   └── model_cache/           # 모델 캐시 디렉토리
+│
+├── frontend/                   # 프론트엔드 애플리케이션
+│   ├── customer/              # 고객용 웹 앱
+│   │   ├── src/
+│   │   │   ├── components/   # React 컴포넌트
+│   │   │   │   ├── AIAssistant.tsx        # AI 어시스턴트 채팅
+│   │   │   │   ├── DocumentViewer.tsx     # 문서 뷰어
+│   │   │   │   ├── EmotionRecognition.tsx # 표정 인식
+│   │   │   │   ├── EyeTracker.tsx         # 시선 추적
+│   │   │   │   ├── PDFViewer.tsx          # PDF 뷰어
+│   │   │   │   └── WebcamFaceDetection.tsx # 웹캠 얼굴 감지
+│   │   │   ├── services/
+│   │   │   │   └── RealtimeAnalysisService.tsx # 실시간 분석 서비스
+│   │   │   └── api/
+│   │   │       └── backend.ts  # 백엔드 API 클라이언트
+│   │   └── public/
+│   │       └── mediapipe/     # MediaPipe 라이브러리
+│   │           └── face_mesh/ # 얼굴 메시 모델
+│   │
+│   ├── staff/                 # 직원용 웹 앱
+│   │   └── src/
+│   │       └── App.tsx        # 직원용 대시보드
+│   │
+│   └── report/                # 리포트 웹 앱
+│       └── src/
+│           ├── Home.tsx       # 홈 화면
+│           ├── Overview.tsx   # 상품 개요
+│           ├── Consulting.tsx # 상담 내역
+│           └── Menu.tsx       # 메뉴 네비게이션
+│
+├── face/                      # 얼굴 인식 및 혼란도 판단 모델
+    ├── daisee_confusion_binary_improved.py  # 개선된 혼란도 판단 모델
+    ├── face-comprehension/   # 얼굴 이해도 모델
+    └── model_cache/           # 모델 캐시
+
+
+
 ```
 
-## 📊 측정 지표
+## 기술 스택
 
-### 읽기 메트릭
-- **Fixation Duration**: 시선 고정 시간 (ms)
-- **Saccade**: 빠른 시선 이동
-- **Regression Rate**: 재읽기 비율
-- **Reading Speed**: 분당 단어 수 (WPM)
+### 백엔드
+- **Python 3.12**: 메인 프로그래밍 언어
+- **FastAPI**: 웹 프레임워크
+- **SQLAlchemy**: ORM
+- **SQLite**: 데이터베이스
+- **Transformers (HuggingFace)**: NLP 모델
+  - KR-FinBert: 금융 도메인 특화 언어 모델
+  - combe4259/fin_simplifier: 문장 간소화 모델
+  - combe4259/face-comprehension: 얼굴 이해도 판단 모델
+- **PyTorch**: 딥러닝 프레임워크
+- **MobileNetV2**: 경량 이미지 특징 추출기
 
-### 이해도 메트릭 🆕
-- **Comprehension Score**: 0-100% 이해도 점수
-- **Cognitive Load**: 인지 부하 (0-1)
-- **Difficult Words**: 어려운 단어 자동 감지
-- **Reading Efficiency**: 이해도 조정 WPM
+### 프론트엔드
+- **React 18**: UI 프레임워크
+- **TypeScript**: 타입 안전성
+- **MediaPipe**: 얼굴 인식 및 추적
+- **WebRTC**: 실시간 웹캠 스트리밍
+- **Axios**: HTTP 클라이언트
+- **React Router**: 라우팅
 
-## 🎓 활용 분야
+### AI/ML 모델
+- **얼굴 표정 인식**: MobileNetV2 기반 경량 모델
+- **문장 간소화**: KR-FinBert 기반 금융 문장 간소화
+- **자연어-SQL 변환**: T5 기반 NL to SQL 변환
+- **혼란도 판단**: DAiSEE 데이터셋 기반 이진 분류 모델
 
-- **교육**: 학생 읽기 능력 평가, 난독증 진단 보조
-- **UX 리서치**: 문서 가독성 테스트, UI 텍스트 최적화
-- **의료**: 인지 장애 진단, 읽기 치료
-- **연구**: 인지 과학 실험, 주의력 연구
+## 설치 및 실행 방법
 
-## 🔧 문제 해결
+### 필수 요구사항
+- Python 3.12 이상
+- Node.js 18 이상
+- npm 또는 yarn
 
-### 카메라 권한 (macOS)
+### 백엔드 설정
+
+1. Python 가상환경 생성 및 활성화
+```bash
+cd text-gaze-tracker
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
-시스템 설정 → 개인정보 보호 및 보안 → 카메라 → Terminal 허용
+
+2. 필요한 패키지 설치
+```bash
+pip install fastapi uvicorn sqlalchemy transformers torch torchvision pillow opencv-python
 ```
 
-### 시선 정확도 향상
-1. `python calibration.py` 실행
-2. 균일한 조명 확보
-3. 카메라 거리 50-70cm 유지
-
-### 한글 폰트 설정
-```python
-# macOS 기본 한글 폰트
-/System/Library/Fonts/AppleSDGothicNeo.ttc
+3. 백엔드 서버 실행
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
 ```
 
-## 📄 라이선스
+### 프론트엔드 설정
 
-MIT License
+#### 고객용 앱 실행
+```bash
+cd frontend/customer
+npm install
+npm start
+```
+http://localhost:3000 에서 접속 가능
 
----
+#### 직원용 대시보드 실행
+```bash
+cd frontend/staff
+npm install
+npm start
+```
+http://localhost:3001 에서 접속 가능
 
-**Note**: 연구 및 교육 목적으로 개발. 의료 진단용으로 사용 금지.
+#### 리포트 앱 실행
+```bash
+cd frontend/report
+npm install
+npm start
+```
+http://localhost:3002 에서 접속 가능

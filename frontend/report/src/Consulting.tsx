@@ -54,9 +54,9 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
           const type = productType.toLowerCase().trim();
           
           if (type.includes('예금') || type.includes('deposit')) {
-            return 'NH고향사랑기부예금';
+            return '채움적금';
           } else if (type.includes('적금') || type.includes('savings')) {
-            return 'NH내가Green초록세상적금';
+            return 'NH내가Green초록세상예금';
           } else if (type.includes('펀드') || type.includes('fund') || type.includes('대출') || type.includes('loan')) {
             return '주택담보노후연금대출';
           } else {
@@ -65,17 +65,31 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
         };
         
         // 백엔드 데이터를 UI 형식으로 변환
-        const formattedConsultations: ConsultationDetail[] = response.consultations.map((consultation, index) => ({
-          id: consultation.consultation_id,
-          title: getProductName(consultation.product_type),
-          location: nhBranches[index % nhBranches.length],
-          date: generateDate(index),
-          category: '가입 완료',
-          expectedAmount: '',
-          nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
-          status: consultation.status === 'completed' ? 'completed' : 'active',
-          statusText: consultation.status === 'completed' ? '완료' : '액션필요'
-        }));
+        const formattedConsultations: ConsultationDetail[] = response.consultations.map((consultation, index) => {
+          const productName = getProductName(consultation.product_type);
+          
+          // 상품명에 따른 카테고리 설정
+          let category = '가입 완료';
+          if (productName === 'NH내가Green초록세상예금') {
+            category = '상담 완료';
+          } else if (productName === '채움적금') {
+            category = '신규 가입';
+          } else if (productName === '주택담보노후연금대출') {
+            category = '서류 보완 필요';
+          }
+          
+          return {
+            id: consultation.consultation_id,
+            title: productName,
+            location: nhBranches[index % nhBranches.length],
+            date: generateDate(index),
+            category: category,
+            expectedAmount: '',
+            nextAction: consultation.status === 'completed' ? '' : '',
+            status: consultation.status === 'completed' ? 'completed' : 'active',
+            statusText: consultation.status === 'completed' ? '완료' : '액션필요'
+          };
+        });
 
         setConsultationDetails(formattedConsultations);
       } catch (error) {
@@ -118,9 +132,9 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
         const type = productType.toLowerCase().trim();
         
         if (type.includes('예금') || type.includes('deposit')) {
-          return 'NH고향사랑기부예금';
+          return '채움적금';
         } else if (type.includes('적금') || type.includes('savings')) {
-          return 'NH내가Green초록세상적금';
+          return 'NH내가Green초록세상예금';
         } else if (type.includes('펀드') || type.includes('fund') || type.includes('대출') || type.includes('loan')) {
           return '주택담보노후연금대출';
         } else {
@@ -129,17 +143,31 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
       };
       
       // 검색 결과를 UI 형식으로 변환
-      const formattedResults: ConsultationDetail[] = response.consultations.map((consultation: any, index: number) => ({
-        id: consultation.consultation_id,
-        title: getProductName(consultation.product_type),
-        location: nhBranches[index % nhBranches.length],
-        date: generateDate(index),
-        category: '상담',
-        expectedAmount: '',
-        nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
-        status: consultation.status === 'completed' ? 'completed' : 'active',
-        statusText: consultation.status === 'completed' ? '완료' : '액션필요'
-      }));
+      const formattedResults: ConsultationDetail[] = response.consultations.map((consultation: any, index: number) => {
+        const productName = getProductName(consultation.product_type);
+        
+        // 상품명에 따른 카테고리 설정
+        let category = '가입 완료';
+        if (productName === 'NH내가Green초록세상예금') {
+          category = '상담 완료';
+        } else if (productName === '채움적금') {
+          category = '신규 가입';
+        } else if (productName === '주택담보노후연금대출') {
+          category = '서류 보완 필요';
+        }
+        
+        return {
+          id: consultation.consultation_id,
+          title: productName,
+          location: nhBranches[index % nhBranches.length],
+          date: generateDate(index),
+          category: category,
+          expectedAmount: '',
+          nextAction: consultation.status === 'completed' ? '' : '다음 할 일: 추가 서류 준비',
+          status: consultation.status === 'completed' ? 'completed' : 'active',
+          statusText: consultation.status === 'completed' ? '완료' : '액션필요'
+        };
+      });
 
       setConsultationDetails(formattedResults);
       
@@ -208,10 +236,10 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
       {/* Tab Navigation */}
       <div className="px-4 py-4 bg-white">
         <div className="bg-gray-200 rounded-full p-1 flex">
-          <button className="flex-1 py-2 text-sm font-medium text-white bg-gray-500 rounded-full">
+          <button className="flex-1 py-2 text-sm font-medium text-gray-600">
             상담예약
           </button>
-          <button className="flex-1 py-2 text-sm font-medium text-gray-600">
+          <button className="flex-1 py-2 text-sm font-medium text-white bg-gray-500 rounded-full">
             내역조회
           </button>
           <button className="flex-1 py-2 text-sm font-medium text-gray-600">
@@ -272,15 +300,20 @@ const Consulting: React.FC<ConsultingProps> = ({ onBack }) => {
                   </div>
                   <div>
                     <h3 className="text-base font-medium text-black">{consultation.title}</h3>
-                    <p className="text-xs text-gray-500">{consultation.location} • {consultation.date}</p>
+                    <div className="flex items-center text-xs text-gray-500">
+                      <span>{consultation.location} • {consultation.date}</span>
+                    </div>
+                    <div className="mt-1">
+                      <span className="inline-block px-2 py-0.5 bg-gray-100 text-xs text-gray-700 rounded">
+                        {consultation.category}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               </div>
 
-
               <div className="mb-3">
-                <p className="text-sm text-gray-600 mb-1">{consultation.category}</p>
                 <p className="text-xl font-bold text-blue-600">
                   {consultation.expectedAmount || consultation.possibleAmount}
                 </p>

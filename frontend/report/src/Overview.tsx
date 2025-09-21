@@ -49,12 +49,12 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
 
   // 백엔드 데이터에서 UI용 상세 정보 추출 (하드코딩)
   const getConsultationDetails = (): ConsultationDetails | null => {
-    // NH내가Green초록세상적금 실제 상품 정보 기반
+    // NH내가Green초록세상예금 실제 상품 정보 기반
     return {
       productInfo: {
-        name: 'NH내가Green초록세상적금',
-        investment: '자유적립식 (월 1만원~50만원)',
-        totalAmount: '월 30만원 × 24개월'
+        name: 'NH내가Green초록세상예금',
+        investment: '정기예금 (1백만원 이상)',
+        totalAmount: '720만원'
       },
       importantItems: [
         {
@@ -63,13 +63,13 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
         }
       ],
       expectedReturn: {
-        period: '24개월 만기 시 (기본 2.35% + 우대 1.0%)',
-        amount: '7,602,180원',
-        profit: '원금 7,200,000원 + 이자 402,180원 (세전)'
+        period: '24개월 만기 시 (기본 2.10% + 우대 최대 0.4%)',
+        amount: '7,362,400원',
+        profit: '원금 7,200,000원 + 이자 162,400원 (세전)'
       },
       todoItems: [
         '온실가스 줄이기 실천 서약서 제출하기',
-        '통장 미발급 선택하여 우대금리 0.3% 받기'
+        '통장 미발급 선택하여 우대금리 0.1% 받기'
       ]
     };
   };
@@ -133,7 +133,7 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
       <div className="px-4 py-6 overflow-y-auto scrollbar-hide" style={{ height: 'calc(100vh - 90px)' }}>
         {/* Title Section */}
         <div className="text-center mb-8">
-          <h2 className="text-xl font-bold text-black mb-2">NH내가Green초록세상적금 상담</h2>
+          <h2 className="text-xl font-bold text-black mb-2">NH내가Green초록세상예금 상담</h2>
           <p className="text-sm text-gray-500">NH농협은행 종로금융센터 • 2025. 9. 16.</p>
         </div>
 
