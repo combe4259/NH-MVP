@@ -3,18 +3,19 @@
 ## 주요 기능
 
 ### 1. 실시간 이해도 분석
-- 웹캠을 통한 고객 표정 기반 이해도 판단
+- 웹캠을 통한 고객 [표정 기반 이해도 판단 AI](https://huggingface.co/combe4259/face-comprehension)
 - 시선 추적을 통한 읽기 패턴 분석
 - 혼란도 감지 시 자동으로 쉬운 설명 제공
-
+- [문장 난이도 분류 AI](https://huggingface.co/combe4259/difficulty_klue)를 통한 난이도 판단
 ### 2. 문장 간소화
-- 복잡한 금융 용어를 쉬운 문장으로 자동 변환
+
+- [금융 문장 변환 AI](https://huggingface.co/combe4259/fin_simplifier)로 고객이 이해하지 못하는 문장을 쉬운 문장으로  변환
 - 문맥을 유지하면서 이해하기 쉬운 문장 생성
 - 음성 안내 지원
 
 ### 3. 자연어 상담 내역 조회
 - "최근에 가입한 예금 상품 보여줘" 같은 자연어 질의 지원
-- SQL 자동 변환 및 데이터 조회
+- [자연어 → SQL 변환 모델](https://huggingface.co/combe4259/NHSQLNL)로 데이터 조회
 - 상담/가입 내역 관리
 
 ### 4. 직원용 대시보드
@@ -39,43 +40,22 @@ text-gaze-tracker/
 │   │   └── ai_model_service.py  # AI 모델 서비스 
 │   └── model_cache/           # 모델 캐시 디렉토리
 │
-├── frontend/                   # 프론트엔드 애플리케이션
-│   ├── customer/              # 고객용 웹 앱
-│   │   ├── src/
-│   │   │   ├── components/   # React 컴포넌트
-│   │   │   │   ├── AIAssistant.tsx        # AI 어시스턴트 채팅
-│   │   │   │   ├── DocumentViewer.tsx     # 문서 뷰어
-│   │   │   │   ├── EmotionRecognition.tsx # 표정 인식
-│   │   │   │   ├── EyeTracker.tsx         # 시선 추적
-│   │   │   │   ├── PDFViewer.tsx          # PDF 뷰어
-│   │   │   │   └── WebcamFaceDetection.tsx # 웹캠 얼굴 감지
-│   │   │   ├── services/
-│   │   │   │   └── RealtimeAnalysisService.tsx # 실시간 분석 서비스
-│   │   │   └── api/
-│   │   │       └── backend.ts  # 백엔드 API 클라이언트
-│   │   └── public/
-│   │       └── mediapipe/     # MediaPipe 라이브러리
-│   │           └── face_mesh/ # 얼굴 메시 모델
-│   │
-│   ├── staff/                 # 직원용 웹 앱
-│   │   └── src/
-│   │       └── App.tsx        # 직원용 대시보드
-│   │
-│   └── report/                # 리포트 웹 앱
-│       └── src/
-│           ├── Home.tsx       # 홈 화면
-│           ├── Overview.tsx   # 상품 개요
-│           ├── Consulting.tsx # 상담 내역
-│           └── Menu.tsx       # 메뉴 네비게이션
-│
-├── face/                      # 얼굴 인식 및 혼란도 판단 모델
-    ├── daisee_confusion_binary_improved.py  # 개선된 혼란도 판단 모델
-    ├── face-comprehension/   # 얼굴 이해도 모델
-    └── model_cache/           # 모델 캐시
+└── frontend/                   
+    ├── customer/              # 고객용 상담 태블릿 
+    │   └── public/
+    │       └── mediapipe/     
+    │           └── face_mesh/ # 얼굴 메시 모델
+    │ 
+    ├── staff/                 # 직원용 태블릿 
+    └── report/                # 상담내역 조회가 가능한 어플리케이션 
+
+    
 
 
 
 ```
+
+
 
 ## 기술 스택
 
@@ -84,10 +64,6 @@ text-gaze-tracker/
 - **FastAPI**: 웹 프레임워크
 - **SQLAlchemy**: ORM
 - **SQLite**: 데이터베이스
-- **Transformers (HuggingFace)**: NLP 모델
-  - KR-FinBert: 금융 도메인 특화 언어 모델
-  - combe4259/fin_simplifier: 문장 간소화 모델
-  - combe4259/face-comprehension: 얼굴 이해도 판단 모델
 - **PyTorch**: 딥러닝 프레임워크
 - **MobileNetV2**: 경량 이미지 특징 추출기
 
