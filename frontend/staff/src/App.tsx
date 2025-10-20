@@ -42,31 +42,31 @@ function App() {
     {
       id: '1',
       name: '김민수',
-      productType: '정기예금',
+      productType: 'ELS(주가연계증권)',
       productDetails: {
-        name: 'NH 행복드림 정기예금',
-        type: '정기예금',
+        name: 'N2 ELS 제44회 파생결합증권(주가연계증권)',
+        type: 'ELS',
         amount: '10,000,000원',
-        period: '12개월',
-        interestRate: '연 4.0%'
+        period: '3년',
+        interestRate: '변동수익'
       },
       consultationPhase: 'terms_reading',
-      currentSection: '중도해지 시 불이익',
+      currentSection: '원금손실 조건',
       emotionState: 'confused',
       comprehensionLevel: 65,
       startTime: new Date(Date.now() - 300000),
-      focusAreas: ['상품 개요', '이자율'],
+      focusAreas: ['기초자산', '수익률'],
       confusedSections: [
-        { section: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우', duration: 45, returnCount: 3 },
-        { section: '권리구제가 어려울 수 있습니다', duration: 30, returnCount: 2 }
+        { section: '원금손실(손실률)은 만기평가가격이 최초기준가격 대비 가장 낮은 기초자산의 하락률만큼 발생합니다.', duration: 45, returnCount: 3 },
+        { section: '세 개의 기초자산 중 어느 하나라도 최초기준가격의 50% 미만인 경우 원금손실이 발생합니다.', duration: 30, returnCount: 2 }
       ],
       readingSpeed: 180,
       attentionScore: 78,
-      riskFactors: ['중도해지 조항 미이해', '우대조건 복잡성'],
+      riskFactors: ['원금손실 조건 미이해', '기초자산 변동성'],
       recommendations: [
-        { priority: 'high', action: '중도해지 수수료 계산 예시 제공', reason: '해당 부분을 3번 이상 반복 읽음' },
-        { priority: 'medium', action: '우대금리 조건 체크리스트 제공', reason: '우대조건 부분에서 혼란 감지' },
-        { priority: 'low', action: '유사 상품 비교표 준비', reason: '상품 비교에 관심 표현' }
+        { priority: 'high', action: '원금 손실 조건 명확히 설명', reason: '가장 실적이 저조한 기초자산 하나로 손실이 결정됨을 강조' },
+        { priority: 'medium', action: '기초자산 예시(KOSPI, HSCEI 등)를 들어 시나리오 설명', reason: '두 개가 올라도 하나가 크게 하락 시 손실 발생 가능성 안내' },
+        { priority: 'low', action: '기초자산, 최초기준가격 등 용어 설명 준비', reason: '고객이 관련 용어에 생소함을 보임' }
       ]
     },
     {
@@ -165,14 +165,47 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // 초기 데이터 로드
-    fetchCustomersData();
+    const interval = setInterval(() => {
+      setCustomers(prevCustomers => {
+        const updatedCustomers = prevCustomers.map(customer => {
+          if (customer.id === '1') { // 김민수 고객만 업데이트
+            let newComprehensionLevel = customer.comprehensionLevel + (Math.random() - 0.5) * 4;
+            newComprehensionLevel = Math.max(5, Math.min(25, newComprehensionLevel));
 
-    // 3초마다 업데이트
-    const interval = setInterval(fetchCustomersData, 3000);
+            let newEmotionState: 'focused' | 'confused' | 'stressed' | 'neutral';
+            if (newComprehensionLevel < 40) {
+              newEmotionState = 'confused';
+            } else if (newComprehensionLevel < 60) {
+              newEmotionState = 'confused';
+            } else if (newComprehensionLevel < 80) {
+              newEmotionState = 'neutral';
+            } else {
+              newEmotionState = 'focused';
+            }
+            
+            return {
+              ...customer,
+              comprehensionLevel: newComprehensionLevel,
+              emotionState: newEmotionState,
+              attentionScore: 75 + Math.cos(Date.now() / 2500) * 20, // 55% ~ 95%
+              readingSpeed: 200 + Math.sin(Date.now() / 3000) * 50, // 150 ~ 250
+            };
+          }
+          return customer;
+        });
+
+        // selectedCustomer도 업데이트
+        const updatedSelectedCustomer = updatedCustomers.find(c => c.id === selectedCustomer?.id);
+        if (updatedSelectedCustomer) {
+          setSelectedCustomer(updatedSelectedCustomer);
+        }
+
+        return updatedCustomers;
+      });
+    }, 500); // 0.5초마다 업데이트
 
     return () => clearInterval(interval);
-  }, [fetchCustomersData]);
+  }, [selectedCustomer?.id]);
 
   const getPhaseLabel = (phase: string) => {
     const labels: { [key: string]: string } = {
@@ -238,7 +271,7 @@ function App() {
         <div className="header-brand">
           <div className="logo">
             <span className="logo-nh">NH</span>
-            <span className="logo-bank">Bank</span>
+  
           </div>
           <h1 className="dashboard-title">스마트 상담 관리 시스템</h1>
         </div>
@@ -404,22 +437,22 @@ function App() {
                     <div className="ai-guide-item">
                       <span className="guide-priority" style={{ backgroundColor: '#ff4444', color: 'white' }}>긴급</span>
                       <div className="guide-content">
-                        <div className="guide-title">가압류, 질권설정 용어 쉽게 설명</div>
-                        <div className="guide-reason">통장 압류 시 돈을 찾을 수 없다는 점 강조 필요</div>
+                        <div className="guide-title">원금 손실 조건 명확히 설명</div>
+                        <div className="guide-reason">가장 실적이 저조한 기초자산 하나로 손실이 결정됨을 강조</div>
                       </div>
                     </div>
                     <div className="ai-guide-item">
                       <span className="guide-priority" style={{ backgroundColor: '#ff9800', color: 'white' }}>권장</span>
                       <div className="guide-content">
-                        <div className="guide-title">권리구제 관련 실제 사례 제공</div>
-                        <div className="guide-reason">서명 후 피해 보상이 어려운 사례 설명 권장</div>
+                        <div className="guide-title">기초자산 예시(KOSPI, HSCEI 등)를 들어 시나리오 설명</div>
+                        <div className="guide-reason">두 개가 올라도 하나가 크게 하락 시 손실 발생 가능성 안내</div>
                       </div>
                     </div>
                     <div className="ai-guide-item">
                       <span className="guide-priority" style={{ backgroundColor: '#4caf50', color: 'white' }}>참고</span>
                       <div className="guide-content">
-                        <div className="guide-title">유사 상품 비교표 준비</div>
-                        <div className="guide-reason">고객이 금리, 이자율 부분에 높은 관심 보임</div>
+                        <div className="guide-title">기초자산, 최초기준가격 등 용어 설명 준비</div>
+                        <div className="guide-reason">고객이 관련 용어에 생소함을 보임</div>
                       </div>
                     </div>
                   </div>
@@ -513,9 +546,9 @@ function App() {
               <div className="panel-controls">
                 <select className="filter-select">
                   <option>전체 상품</option>
-                  <option>정기예금</option>
-                  <option>적금</option>
-                  <option>펀드</option>
+                  <option>ELS</option>
+                  <option>ELB</option>
+                  <option>기타</option>
                 </select>
               </div>
             </div>
@@ -523,21 +556,21 @@ function App() {
             <div className="products-list">
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH고향사랑기부예금</h3>
-                  <span className="product-type">정기예금</span>
+                  <h3 className="product-name">N2 ELS 제58회</h3>
+                  <span className="product-type">ELS (Step-Down)</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
-                    <span className="spec-label">금리</span>
-                    <span className="spec-value">연 2.15~2.6%</span>
+                    <span className="spec-label">기초자산</span>
+                    <span className="spec-value">Tesla, Palantir</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">기간</span>
-                    <span className="spec-value">12개월</span>
+                    <span className="spec-label">최대수익률</span>
+                    <span className="spec-value highlight">연 23.80%</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">최소금액</span>
-                    <span className="spec-value">100만원</span>
+                    <span className="spec-label">상환조건</span>
+                    <span className="spec-value">80-80-75-75-70-65 / KI 35</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -548,21 +581,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH왈츠회전예금 II</h3>
-                  <span className="product-type">정기예금</span>
+                  <h3 className="product-name">N2 ELS 제51회</h3>
+                  <span className="product-type">ELS (월지급식)</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
-                    <span className="spec-label">금리</span>
-                    <span className="spec-value">연 2.30~2.65%</span>
+                    <span className="spec-label">기초자산</span>
+                    <span className="spec-value">SK이노베이션, 삼성SDI</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">기간</span>
-                    <span className="spec-value">12~36개월</span>
+                    <span className="spec-label">최대수익률</span>
+                    <span className="spec-value highlight">연 14.31%</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">최소금액</span>
-                    <span className="spec-value">300만원</span>
+                    <span className="spec-label">상환조건</span>
+                    <span className="spec-value">90-90-85-80-75-65 / KI 40</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -573,21 +606,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">채움적금</h3>
-                  <span className="product-type">적금</span>
+                  <h3 className="product-name">N2 ELS 제55회</h3>
+                  <span className="product-type">ELS (Step-Down)</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
-                    <span className="spec-label">금리</span>
-                    <span className="spec-value">연 2.45~2.55%</span>
+                    <span className="spec-label">기초자산</span>
+                    <span className="spec-value">한화에어로, KOSPI200</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">기간</span>
-                    <span className="spec-value">12~36개월</span>
+                    <span className="spec-label">최대수익률</span>
+                    <span className="spec-value highlight">연 16.60%</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">월납입</span>
-                    <span className="spec-value">자유적립</span>
+                    <span className="spec-label">상환조건</span>
+                    <span className="spec-value">85-85-80-80-75-70 / KI 35</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -598,21 +631,21 @@ function App() {
 
               <div className="product-item">
                 <div className="product-header">
-                  <h3 className="product-name">NH고향사랑기부적금</h3>
-                  <span className="product-type">적금</span>
+                  <h3 className="product-name">N2 ELS 제57회</h3>
+                  <span className="product-type">ELS (Step-Down)</span>
                 </div>
                 <div className="product-details">
                   <div className="product-spec">
-                    <span className="spec-label">금리</span>
-                    <span className="spec-value">연 2.60~3.55%</span>
+                    <span className="spec-label">기초자산</span>
+                    <span className="spec-value">Shopify, S&P500</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">기간</span>
-                    <span className="spec-value">12~36개월</span>
+                    <span className="spec-label">최대수익률</span>
+                    <span className="spec-value highlight">연 13.30%</span>
                   </div>
                   <div className="product-spec">
-                    <span className="spec-label">월납입</span>
-                    <span className="spec-value">최대 50만원</span>
+                    <span className="spec-label">상환조건</span>
+                    <span className="spec-value">85-85-80-80-75-70 / KI 35</span>
                   </div>
                 </div>
                 <div className="product-actions">
@@ -620,6 +653,7 @@ function App() {
                   <button className="product-btn">비교하기</button>
                 </div>
               </div>
+
             </div>
           </div>
 

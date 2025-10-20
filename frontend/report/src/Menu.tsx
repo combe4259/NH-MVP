@@ -31,7 +31,7 @@ const Menu: React.FC<MenuProps> = ({ onClose, onNavigateToConsulting }) => {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
         <div className="flex items-center space-x-2">
-          <h1 className="text-lg font-normal text-black">김수연님</h1>
+          <h1 className="text-lg font-normal text-black">김민수님</h1>
           <ChevronRight className="w-4 h-4 text-gray-500" />
           <div className="bg-gray-100 px-3 py-1 rounded-full">
             <span className="text-xs text-gray-600">로그아웃</span>

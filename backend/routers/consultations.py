@@ -278,6 +278,7 @@ async def list_consultations(status: Optional[str] = None, limit: int = 20):
                 "customer_id": consultation['customer_id'],
                 "customer_name": consultation['customer_name'],
                 "product_type": consultation['product_type'],
+                "product_details": json.loads(consultation['product_details']) if consultation['product_details'] else None,
                 "consultation_phase": consultation['consultation_phase'],
                 "status": consultation['status'],
                 "start_time": consultation['start_time'].isoformat(),
@@ -387,32 +388,53 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
     자연어 검색을 통한 상담 내역 조회
     HuggingFace의 NHSQLNL 모델을 사용하여 자연어를 SQL로 변환
     """
+    conn = None
     try:
+        # 데모 시나리오용 하드코딩
+        if request.natural_language_query == "최근에 가입한 ELS 상품 보여줘":
+            logger.info("[데모 시나리오] '최근 가입 ELS 상품' 검색 실행")
+            conn = await get_db_connection()
+            consultation = await conn.fetchrow("""
+                SELECT c.*, cu.name as customer_name
+                FROM consultations c
+                JOIN customers cu ON c.customer_id = cu.id
+                WHERE c.product_details->>'name' = 'N2 ELS 제44회 파생결합증권'
+                LIMIT 1
+            """)
+            await release_db_connection(conn)
+            conn = None # Connection is released
+
+            if consultation:
+                consultation_list = [{
+                    "consultation_id": str(consultation.get('id', '')),
+                    "customer_id": str(consultation.get('customer_id', '')),
+                    "customer_name": consultation.get('customer_name', '알 수 없음'),
+                    "product_type": consultation.get('product_type', ''),
+                    "product_details": json.loads(consultation['product_details']) if consultation['product_details'] else None,
+                    "consultation_phase": consultation.get('consultation_phase', ''),
+                    "status": consultation.get('status', ''),
+                    "start_time": consultation.get('start_time').isoformat() if consultation.get('start_time') else None,
+                    "end_time": consultation.get('end_time').isoformat() if consultation.get('end_time') else None
+                }]
+                return {"consultations": consultation_list, "total_count": 1}
+            else:
+                return {"consultations": [], "total_count": 0}
+
         from services.nl_to_sql_service import NLtoSQLService
         
-        # NL to SQL 서비스 초기화
         nl_service = NLtoSQLService()
-        
-        # 자연어를 SQL로 변환
         sql_query = await nl_service.convert_to_sql(request.natural_language_query)
         
         logger.info(f"[NL검색] 자연어 쿼리: {request.natural_language_query}")
         logger.info(f"[NL검색] 변환된 SQL: {sql_query}")
-        logger.info(f"[NL검색] SQL 길이: {len(sql_query)}")
         
         conn = await get_db_connection()
         
-        # SQL 쿼리 실행
-        # 보안을 위해 SELECT 쿼리만 허용
         if not sql_query.strip().upper().startswith("SELECT"):
             raise HTTPException(status_code=400, detail="SELECT 쿼리만 허용됩니다.")
         
-        # 쿼리 실행
         consultations = await conn.fetch(sql_query)
         
-        await release_db_connection(conn)
-        
-        # 결과 포맷팅
         consultation_list = []
         for consultation in consultations:
             consultation_list.append({
@@ -420,6 +442,7 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
                 "customer_id": str(consultation.get('customer_id', '')),
                 "customer_name": consultation.get('customer_name', '알 수 없음'),
                 "product_type": consultation.get('product_type', ''),
+                "product_details": json.loads(consultation['product_details']) if consultation.get('product_details') else None,
                 "consultation_phase": consultation.get('consultation_phase', ''),
                 "status": consultation.get('status', ''),
                 "start_time": consultation.get('start_time').isoformat() if consultation.get('start_time') else None,
@@ -430,19 +453,20 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
             "consultations": consultation_list,
             "total_count": len(consultation_list),
             "natural_language_query": request.natural_language_query,
-            "sql_query": sql_query,  # 디버깅용 (프로덕션에서는 제거 권장)
+            "sql_query": sql_query,
             "last_updated": datetime.now().isoformat()
         }
         
     except ImportError:
         logger.error("NL to SQL 서비스를 불러올 수 없습니다.")
-        # 폴백: 키워드 기반 검색
         return await fallback_keyword_search(request.natural_language_query)
         
     except Exception as e:
         logger.error(f"자연어 검색 실패: {e}")
-        # 폴백: 키워드 기반 검색
         return await fallback_keyword_search(request.natural_language_query)
+    finally:
+        if conn:
+            await release_db_connection(conn)
 
 async def fallback_keyword_search(query: str):
     """키워드 기반 폴백 검색"""

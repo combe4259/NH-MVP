@@ -56,7 +56,8 @@ export interface ConsultationSummary {
   consultation_id: string;
   customer_name: string;
   product_type: string;
-  status: string;
+  product_details: { name?: string };
+  status: 'active' | 'completed';
   start_time: string;
   end_time?: string;
 }

@@ -18,8 +18,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
     const [showPopup, setShowPopup] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
     const [pdfLoaded, setPdfLoaded] = useState(false);
-    
+    const [highlightActive, setHighlightActive] = useState(false);
+
     const viewerContainerRef = useRef<HTMLDivElement>(null);
+    const highlightRef = useRef<any>(null);
+    const scrollPositionRef = useRef<number>(0);
     
     // PDF 로드 시 텍스트 영역 추출
     useEffect(() => {
@@ -63,118 +66,124 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
     
     // 하드코딩된 설명
     const EXPLANATIONS = {
-        '가압류': "통장에 법적인 문제가 생기면 돈을 못 찾아요. 빚 때문에 통장이 잠긴다고 생각하면 됩니다.",
-        '질권설정': "통장에 법적인 문제가 생기면 돈을 못 찾아요. 빚 때문에 통장이 잠긴다고 생각하면 됩니다.",
-        '권리구제': "나중에 문제가 생겼을 때 법적으로 도움받기 어려워진다는 뜻이에요. 이해하지 못했는데 서명하면 나중에 피해를 보상받기 힘들어집니다."
+        '원금손실': "세 개의 지수 중 두 개가 아무리 올라도 소용없습니다. 가장 많이 떨어진 지수 하나가 고객님의 최종 손실률을 결정합니다."
     };
     
     const [currentKeyword, setCurrentKeyword] = useState<string>('');
 
     const searchPluginInstance = searchPlugin({
         renderHighlights: (renderProps) => {
-            // 특정 문장의 키워드들을 추적하기 위한 Set
-            const targetSentenceAreas = new Set<number>();
-            let targetLineTop: number | null = null;
-            
-            // 먼저 "가압류, 질권설정, 권리구제"이 포함된 라인들 찾기
-            const targetLineTops: number[] = [];
-            
+            // 라인별로 키워드 수집
+            const lineKeywords = new Map<number, Set<string>>();
+            const lineAreas = new Map<number, number[]>();
+
             renderProps.highlightAreas.forEach((area, idx) => {
                 const keyword = (area as any).keywordStr;
-                if (keyword?.includes('가압류') || keyword?.includes('질권설정') || keyword?.includes('권리구제')) {
-                    const cssProps = renderProps.getCssProperties(area);
-                    if (cssProps.top) {
-                        const topValue = typeof cssProps.top === 'string' ? cssProps.top : String(cssProps.top);
-                        const topNum = parseFloat(topValue);
-                        // 중복 제거 (오차 범위 2px)
-                        if (!targetLineTops.some(t => Math.abs(t - topNum) < 2)) {
-                            targetLineTops.push(topNum);
-                        }
+                const cssProps = renderProps.getCssProperties(area);
+                if (cssProps.top && keyword?.trim()) {
+                    const topValue = typeof cssProps.top === 'string' ? cssProps.top : String(cssProps.top);
+                    const topNum = parseFloat(topValue);
+
+                    if (!lineKeywords.has(topNum)) {
+                        lineKeywords.set(topNum, new Set());
+                        lineAreas.set(topNum, []);
                     }
+                    lineKeywords.get(topNum)!.add(keyword);
+                    lineAreas.get(topNum)!.push(idx);
                 }
             });
-            
-            // 타겟 라인들과 같은 높이에 있는 모든 키워드 찾기
-            targetLineTops.forEach(lineTop => {
-                renderProps.highlightAreas.forEach((area, idx) => {
-                    const cssProps = renderProps.getCssProperties(area);
-                    if (cssProps.top) {
-                        const topValue = typeof cssProps.top === 'string' ? cssProps.top : String(cssProps.top);
-                        const currentTop = parseFloat(topValue);
-                        if (Math.abs(currentTop - lineTop) < 2) {
-                            targetSentenceAreas.add(idx);
-                        }
-                    }
-                });
+
+            // 첫 번째 줄과 두 번째 줄을 각각 찾기
+            type LineData = {top: number, areas: number[]};
+            let firstLine: LineData | null = null;
+            let secondLine: LineData | null = null;
+
+            // 첫 번째 줄 찾기: 원금손실(손실률 = 만기평가가격이 최초기준가격 대비
+            lineKeywords.forEach((keywords, topNum) => {
+                const keywordArray = Array.from(keywords);
+
+                const hasAll =
+                    keywordArray.some(k => k.includes('원금손실')) &&
+                    keywordArray.some(k => k.includes('(')) &&
+                    keywordArray.some(k => k.includes('손실률')) &&
+                    keywordArray.some(k => k.includes('=')) &&
+                    keywordArray.some(k => k.includes('만기평가가격')) &&
+                    keywordArray.some(k => k.includes('이')) &&
+                    keywordArray.some(k => k.includes('최초기준가격')) &&
+                    keywordArray.some(k => k.includes('대비'));
+
+                if (hasAll) {
+                    firstLine = { top: topNum, areas: lineAreas.get(topNum) || [] };
+                }
             });
-            
+
+            // 두 번째 줄 찾기: 가장 낮은 기초자산의 하락률)
+            lineKeywords.forEach((keywords, topNum) => {
+                const keywordArray = Array.from(keywords);
+                const hasAll =
+                    keywordArray.some(k => k.includes('가장')) &&
+                    keywordArray.some(k => k.includes('낮은')) &&
+                    keywordArray.some(k => k.includes('기초자산')) &&
+                    keywordArray.some(k => k.includes('의')) &&
+                    keywordArray.some(k => k.includes('하락률')) &&
+                    keywordArray.some(k => k.includes(')'));
+
+                if (hasAll) {
+                    secondLine = { top: topNum, areas: lineAreas.get(topNum) || [] };
+                }
+            });
+
+            // 두 줄이 모두 있고, 서로 가까운 위치에 있는지 확인 (±50px 이내)
+            const targetAreaIndices = new Set<number>();
+            if (firstLine !== null && secondLine !== null) {
+                const line1: LineData = firstLine;
+                const line2: LineData = secondLine;
+                if (Math.abs(line1.top - line2.top) < 50) {
+                    line1.areas.forEach((idx: number) => targetAreaIndices.add(idx));
+                    line2.areas.forEach((idx: number) => targetAreaIndices.add(idx));
+                }
+            }
+
+            // 렌더링
             return (
                 <>
                     {renderProps.highlightAreas.map((area, index) => {
+                        if (!targetAreaIndices.has(index)) return null;
+
                         const keyword = (area as any).keywordStr;
                         if (!keyword?.trim()) return null;
-                        
-                        // 형광펜 하이라이트 키워드 (가압류, 질권설정, 권리구제)
-                        const highlightKeywords = ['가압류', '질권설정', '권리구제'];
-                        const isHighlightKeyword = highlightKeywords.some(k => keyword.includes(k));
-                        
-                        // 타겟 문장에 속하는지 확인
-                        const isInTargetSentence = targetSentenceAreas.has(index);
-                        
-                        if (isHighlightKeyword) {
-                            // 형광펜 하이라이트 (가압류, 질권설정, 권리구제)
-                            const cssProps = renderProps.getCssProperties(area);
-                            return (
-                                <div
-                                    key={`keyword-${index}`}
-                                    className="keyword-highlight"
-                                    style={{
-                                        ...cssProps,
-                                        cursor: 'pointer',
-                                        pointerEvents: 'auto',
-                                        zIndex: 100
-                                    }}
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        
-                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        
-                                        // 클릭된 키워드 확인
-                                        const clickedKeyword = highlightKeywords.find(k => keyword.includes(k));
-                                        if (clickedKeyword) {
-                                            setCurrentKeyword(clickedKeyword);
-                                        }
-                                        
-                                        // 화면 기준 절대 위치로 설정
-                                        const newPosition = {
-                                            top: rect.bottom + window.scrollY + 5,
-                                            left: rect.left + window.scrollX
-                                        };
-                                        
-                                        setPopupPosition(newPosition);
-                                        setShowPopup(true);
-                                    }}
-                                    title="클릭하여 쉬운 설명 보기"
-                                />
-                            );
-                        } else if (isInTargetSentence) {
-                            // 타겟 문장에 속하는 다른 단어들은 밑줄
-                            const cssProps = renderProps.getCssProperties(area);
-                            return (
-                                <div
-                                    key={`underline-${index}`}
-                                    className="line-underline"
-                                    style={{
-                                        ...cssProps,
-                                        cursor: 'auto',
-                                        pointerEvents: 'none'
-                                    }}
-                                />
-                            );
-                        }
-                        
-                        return null;
+
+                        const cssProps = renderProps.getCssProperties(area);
+                        const isClickable = keyword.includes('원금손실');
+
+                        return (
+                            <div
+                                key={`keyword-${index}`}
+                                className="keyword-highlight"
+                                style={{
+                                    ...cssProps,
+                                    cursor: isClickable ? 'pointer' : 'default',
+                                    pointerEvents: isClickable ? 'auto' : 'none',
+                                    zIndex: 100
+                                }}
+                                onClick={isClickable ? (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    setCurrentKeyword('원금손실');
+
+                                    const newPosition = {
+                                        top: rect.bottom + window.scrollY + 15,
+                                        left: rect.left + window.scrollX
+                                    };
+
+                                    setPopupPosition(newPosition);
+                                    setShowPopup(true);
+                                } : undefined}
+                                title={isClickable ? "클릭하여 쉬운 설명 보기" : undefined}
+                            />
+                        );
                     })}
                 </>
             );
@@ -183,23 +192,65 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
 
     const { highlight } = searchPluginInstance;
 
-    // PDF 로드되면 자동으로 하이라이트
+    // highlight 함수를 ref에 저장
     useEffect(() => {
-        if (highlight && pdfLoaded) {
-            setTimeout(() => {
-                // 모든 키워드 하이라이트 (형광펜 + 밑줄)
-                const keywords = [
-                    // 형광펜 키워드
-                    '가압류', '질권설정', '권리구제',
-                    // 첫 번째 문장 밑줄 키워드
-                    '계좌에', '압류', '등이', '등록될', '경우', '원금', '및', '이자', '지급', '제한',
-                    // 두 번째 문장 밑줄 키워드
-                    '남기시는', '경우,', '추후', '해당', '내용과', '관련한', '가', '어려울', '수', '있습니다'
-                ];
-                highlight(keywords);
-            }, 1500);
+        highlightRef.current = highlight;
+    }, [highlight]);
+
+    // Shift+0 키보드 이벤트로 하이라이트 토글
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Shift+0 키 감지
+            if (event.shiftKey && event.key === ')') {  // Shift+0는 ')' 문자
+                event.preventDefault();
+                setHighlightActive(prev => {
+                    // 토글 off 시 팝업도 닫기
+                    if (prev) {
+                        setShowPopup(false);
+                    }
+                    return !prev;
+                });
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // highlightActive 상태에 따라 하이라이트 실행/제거
+    useEffect(() => {
+        if (highlightRef.current && pdfLoaded) {
+            if (highlightActive) {
+                // 현재 스크롤 위치 저장
+                const viewerContainer = viewerContainerRef.current?.querySelector('.rpv-core__viewer');
+                if (viewerContainer) {
+                    scrollPositionRef.current = viewerContainer.scrollTop;
+                }
+
+                setTimeout(() => {
+                    // 첫 번째 줄과 두 번째 줄의 모든 키워드
+                    const keywords = [
+                        // 첫 번째 줄: 원금손실(손실률 = 만기평가가격이 최초기준가격 대비
+                        '원금손실', '(', '손실률', '=', '>', '만기평가가격', '이', '최초기준가격', '대비',
+                        // 두 번째 줄: 가장 낮은 기초자산의 하락률)
+                        '가장', '낮은', '기초자산', '의', '하락률', ')'
+                    ];
+                    highlightRef.current(keywords);
+
+                    // 하이라이트 후 스크롤 위치 복원
+                    setTimeout(() => {
+                        const viewerContainer = viewerContainerRef.current?.querySelector('.rpv-core__viewer');
+                        if (viewerContainer && scrollPositionRef.current > 0) {
+                            viewerContainer.scrollTop = scrollPositionRef.current;
+                        }
+                    }, 50);
+                }, 100);
+            } else {
+                // 하이라이트 제거
+                highlightRef.current([]);
+            }
         }
-    }, [pdfLoaded, highlight]);
+    }, [highlightActive, pdfLoaded]);
 
     const handleDocumentLoad = useCallback(() => {
         setPdfLoaded(true);
@@ -248,7 +299,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                             left: `${popupPosition.left}px`,
                             top: `${popupPosition.top}px`,
                             zIndex: 10000,
-                            width: '336px',  // 280px * 1.2 = 336px
+                            width: '400px',  // 280px * 1.2 = 336px
                             backgroundColor: '#ffffff',
                             border: '1px solid #e1e4e8',
                             borderRadius: '12px',
@@ -273,26 +324,24 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                             </span>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 {/* TTS 재생 버튼 */}
-                                <button 
+                                <button
                                     onClick={() => {
-                                        const explanationText = EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['가압류'];
-                                        const exampleText = currentKeyword === '권리구제' 
-                                            ? '예를 들어, 상품 설명을 제대로 듣지 못했는데 이해했다고 서명했다면, 나중에 손해를 봐도 은행에 책임을 물을 수 없게 됩니다.'
-                                            : '통장에 100만원이 있어도 법원이 막으면 한 푼도 못 찾아요. 통장에 자물쇠가 걸린 것과 같습니다.';
-                                        
+                                        const explanationText = EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['원금손실'];
+                                        const exampleText = '예를 들어, KOSPI200 지수가 +20%, NIKKEI225 지수가 +15% 올랐어도, HSCEI 지수가 -30% 떨어지면 고객님의 손실은 -30%가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.';
+
                                         const fullText = `${explanationText} ${exampleText}`;
-                                        
+
                                         // Web Speech API를 사용한 TTS
                                         if ('speechSynthesis' in window) {
                                             // 기존 재생 중지
                                             window.speechSynthesis.cancel();
-                                            
+
                                             const utterance = new SpeechSynthesisUtterance(fullText);
                                             utterance.lang = 'ko-KR';
                                             utterance.rate = 0.9;  // 속도 약간 느리게
                                             utterance.pitch = 1.0;
                                             utterance.volume = 1.0;
-                                            
+
                                             window.speechSynthesis.speak(utterance);
                                         } else {
                                             alert('이 브라우저는 음성 읽기를 지원하지 않습니다.');
@@ -360,14 +409,14 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                     borderLeft: '4px solid #00A651',  // NH 그린 강조선
                                     fontWeight: '500'
                                 }}>
-                                    {EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['가압류']}
+                                    {EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['원금손실']}
                                 </div>
                             </div>
 
                             {/* 실생활 예시 */}
                             <div>
-                                <div style={{ 
-                                    fontSize: '12px', 
+                                <div style={{
+                                    fontSize: '12px',
                                     color: '#00A651',  // NH 그린
                                     marginBottom: '8px',
                                     fontWeight: '600',
@@ -376,7 +425,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 }}>
                                     실생활 예시
                                 </div>
-                                <div style={{ 
+                                <div style={{
                                     fontSize: '14px',
                                     lineHeight: '1.6',
                                     color: '#1a1a1a',
@@ -385,10 +434,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                     boxShadow: '0 2px 8px rgba(0, 166, 81, 0.1)',  // 그린 톤 그림자
                                     fontWeight: '400'
                                 }}>
-                                    {currentKeyword === '권리구제' 
-                                        ? '예를 들어, 상품 설명을 제대로 듣지 못했는데 "이해했다"고 서명했다면, 나중에 손해를 봐도 은행에 책임을 물을 수 없게 됩니다.'
-                                        : '통장에 100만원이 있어도 법원이 막으면 한 푼도 못 찾아요. 통장에 자물쇠가 걸린 것과 같습니다.'
-                                    }
+                                    예를 들어, <strong>KOSPI200 지수가 +20%</strong>, <strong>NIKKEI225 지수가 +15%</strong> 올랐어도, <strong style={{color: '#d32f2f'}}>HSCEI 지수가 -30% 떨어지면</strong> 고객님의 손실은 <strong style={{color: '#d32f2f'}}>-30%</strong>가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.
                                 </div>
                             </div>
                         </div>

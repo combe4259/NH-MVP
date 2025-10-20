@@ -114,6 +114,12 @@ CREATE TABLE IF NOT EXISTS reading_analysis (
     text_elements JSONB,
     reading_metrics JSONB,
 
+    -- 리스크 태깅 (자연어 검색용)
+    risk_tags TEXT[],  -- ['원금손실', 'knock-in', '조기상환'] 같은 주요 리스크 태그
+    risk_keywords JSONB,  -- {'원금손실': 0.85, 'knock_in': 0.92} 같은 키워드와 중요도
+    risk_level VARCHAR(20),  -- 'critical', 'high', 'medium', 'low'
+    ai_warning_given BOOLEAN DEFAULT FALSE,  -- AI가 재설명 권고했는지 여부
+
     analysis_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -137,6 +143,8 @@ CREATE INDEX IF NOT EXISTS idx_consultations_customer_id ON consultations(custom
 CREATE INDEX IF NOT EXISTS idx_consultations_status ON consultations(status);
 CREATE INDEX IF NOT EXISTS idx_reading_analysis_consultation_id ON reading_analysis(consultation_id);
 CREATE INDEX IF NOT EXISTS idx_reading_analysis_timestamp ON reading_analysis(analysis_timestamp);
+CREATE INDEX IF NOT EXISTS idx_reading_analysis_risk_tags ON reading_analysis USING GIN(risk_tags);
+CREATE INDEX IF NOT EXISTS idx_reading_analysis_risk_level ON reading_analysis(risk_level);
 """
 
 async def init_database():

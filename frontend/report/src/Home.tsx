@@ -12,6 +12,7 @@ interface ConsultationRecord {
   date: string;
   location?: string;
   nextAction?: string;
+  product_details?: { name?: string };
 }
 
 const Home: React.FC = () => {
@@ -30,22 +31,31 @@ const Home: React.FC = () => {
       try {
         setIsLoading(true);
 
-        // 백엔드 연결 확인
         await reportAPI.healthCheck();
         setBackendConnected(true);
 
-        // 완료된 상담 목록 가져오기
-        const response = await reportAPI.getCompletedConsultations(10);
+        const response = await reportAPI.getCompletedConsultations(2);
 
-        // 백엔드 데이터를 UI 형식으로 변환
-        const formattedConsultations: ConsultationRecord[] = response.consultations.map((consultation, index) => ({
-          id: consultation.consultation_id,
-          type: getProductIcon(consultation.product_type),
-          title: `${consultation.product_type} 상담`,
-          date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
-          location: 'NH 디지털 상담',
-          nextAction: consultation.status === 'completed' ? '상담 완료' : '진행 중'
-        }));
+        const nhBranches = ['NH금융PLUS 영업부금융센터', '잠실금융센터', 'Premier Blue 삼성동센터', 'NH금융PLUS 광화문금융센터'];
+
+        const formattedConsultations: ConsultationRecord[] = response.consultations.map((consultation, index) => {
+          const productName = consultation.product_details?.name || consultation.product_type;
+          let statusText = '상담 완료';
+          if (consultation.status !== 'completed') {
+            statusText = '진행 중';
+          } else if (productName === 'N2 ELS 제44회 파생결합증권') {
+            statusText = '가입 완료';
+          }
+
+          return {
+            id: consultation.consultation_id,
+            type: '📄', // ELS는 문서 아이콘으로 통일
+            title: productName,
+            date: new Date(consultation.start_time).toLocaleDateString('ko-KR').replace(/\./g, '.').replace(/ /g, ''),
+            location: nhBranches[index % nhBranches.length],
+            nextAction: statusText
+          };
+        });
 
         setConsultations(formattedConsultations);
 
@@ -58,7 +68,7 @@ const Home: React.FC = () => {
           {
             id: 'demo-1',
             type: '🏦',
-            title: '정기예금 상담 (데모)',
+            title: 'N2 ELS 제44회 (데모)',
             date: '2024.09.14',
             location: 'NH 디지털 상담',
             nextAction: '백엔드 연결 중...'
@@ -123,7 +133,7 @@ const Home: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
         <div className="flex items-center space-x-1">
-          <h1 className="text-lg font-normal text-black">김수연님</h1>
+          <h1 className="text-lg font-normal text-black">김민수님</h1>
           <ChevronRight className="w-4 h-4 text-gray-500" />
         </div>
         <div className="flex items-center space-x-4">
@@ -201,22 +211,21 @@ const Home: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3 flex-1">
                       <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-white text-lg">{consultation.type}</span>
+                        <span className="text-white text-sm font-bold">NH</span>
                       </div>
                       <div className="flex-1">
                         <div className="text-sm text-black font-medium mb-1">
                           {consultation.title}
                         </div>
                         <div className="text-xs text-green-600 mb-1">
-                          📍 {consultation.location}
+                          {consultation.location}
                         </div>
                         <div className="flex items-center text-xs text-gray-500 mb-2">
-                          <span>📅</span>
                           <span className="ml-1">{consultation.date}</span>
                         </div>
                         {consultation.nextAction && (
                           <div className="text-xs text-black flex items-center">
-                            <span className="mr-2">📄</span>
+                            
                             {consultation.nextAction}
                             <ChevronRight className="w-3 h-3 text-gray-400 ml-auto" />
                           </div>

@@ -197,15 +197,16 @@ class HuggingFaceModels(AIModelInterface):
                 padding=True
             )
             
-            # 간소화된 텍스트 생성
+            # 간소화된 텍스트 생성 (deterministic 모드)
             with torch.no_grad():
                 outputs = self.simplifier_model.generate(
                     **inputs,
-                    max_length=256,
-                    num_beams=5,
-                    temperature=0.8,
-                    do_sample=True,
-                    top_p=0.95
+                    max_length=150,
+                    num_beams=4,
+                    do_sample=False,  # 결정적 생성
+                    repetition_penalty=1.2,  # 반복 방지
+                    no_repeat_ngram_size=3,  # 3-gram 반복 방지
+                    early_stopping=True
                 )
             
             # 디코딩

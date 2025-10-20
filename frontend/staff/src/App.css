@@ -249,7 +249,7 @@ body {
 /* Dashboard Grid */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 320px 1fr 400px;
+  grid-template-columns: 350px 1fr 400px;
   gap: 24px;
   height: calc(100vh - 64px - 48px - 100px);
 }

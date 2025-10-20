@@ -1,3 +1,47 @@
+# Python 3.12.2 호환 최소 패키지 목록
+# 핵심 기능만 포함
+
+# 웹 프레임워크
+fastapi==0.116.1
+uvicorn[standard]==0.24.0
+
+# 데이터베이스
+supabase==2.18.1
+
+# AI/ML
+torch==2.2.2
+torchvision==0.17.2
+transformers==4.56.1
+
+# 컴퓨터 비전
+mediapipe==0.10.14
+opencv-python==4.9.0.80
+
+# 데이터 처리
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.11.4
+
+# 이미지 처리
+pillow==10.3.0
+pytesseract==0.3.10
+
+# 시각화
+matplotlib==3.8.4
+
+# HTTP
+httpx>=0.26,<0.29
+requests==2.31.0
+
+# 검증
+pydantic>=2.11.7,<3.0.0
+
+# 환경 변수
+python-dotenv==1.0.0
+
+# 날짜 처리
+python-dateutil==2.8.2
+
 mediapipe==0.10.14
 opencv-python==4.9.0.80
 numpy==1.26.4
