@@ -14,31 +14,33 @@ interface AIAssistantProps {
 
 const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequestMore = () => {} }) => {
   const [mounted, setMounted] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showAnimation, setShowAnimation] = useState(false);
+  const [userFeedback, setUserFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
   const portalRoot = useRef<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
     portalRoot.current = document.getElementById('ai-portal');
     setMounted(true);
     
-    // Prevent body scroll when AI Assistant is open
-    document.body.style.overflow = 'hidden';
+    if (suggestion) {
+      document.body.style.overflow = 'hidden';
+    }
     
     return () => {
       document.body.style.overflow = '';
     };
-  }, []);
+  }, [suggestion]);
+
+  useEffect(() => {
+    if (suggestion) {
+      setTimeout(() => setShowAnimation(true), 100);
+    }
+  }, [suggestion]);
 
   if (!mounted || !portalRoot.current || !suggestion) {
     return null;
   }
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showAnimation, setShowAnimation] = useState(false);
-  const [userFeedback, setUserFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
-
-  useEffect(() => {
-    // 부드러운 등장 애니메이션
-    setTimeout(() => setShowAnimation(true), 100);
-  }, []);
 
   const handleFeedback = (feedback: 'helpful' | 'not-helpful') => {
     setUserFeedback(feedback);
@@ -56,7 +58,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
 
   return ReactDOM.createPortal(
     <div className={`ai-assistant ${showAnimation ? 'show' : ''}`}>
-      {/* 미니 플로팅 버튼 형태 */}
       {!isExpanded && (
         <div className="ai-bubble" onClick={() => setIsExpanded(true)}>
           <div className="ai-avatar">
@@ -66,13 +67,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
             <p className="ai-greeting">이 부분이 어려우신가요?</p>
             <p className="ai-section">{suggestion.section}</p>
           </div>
-          <button className="expand-btn">
-            자세히 보기
-          </button>
+          <button className="expand-btn">자세히 보기</button>
         </div>
       )}
 
-      {/* 확장된 설명 패널 */}
       {isExpanded && (
         <div className="ai-panel">
           <div className="panel-header">
@@ -84,13 +82,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
           </div>
 
           <div className="panel-content">
-            {/* 원본 내용 */}
             <div className="original-content">
               <span className="label">원본 내용</span>
               <p className="original-text">{suggestion.section}</p>
             </div>
 
-            {/* 쉬운 설명 */}
             <div className="simple-explanation">
               <span className="label">쉽게 풀어서 설명</span>
               <div className="explanation-box">
@@ -98,7 +94,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               </div>
             </div>
 
-            {/* 실생활 예시 */}
             {suggestion.simpleExample && (
               <div className="example-section">
                 <span className="label">실생활 예시</span>
@@ -109,7 +104,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               </div>
             )}
 
-            {/* 비주얼 설명 */}
             <div className="visual-explanation">
               <span className="label">한눈에 보기</span>
               <div className="visual-cards">
@@ -131,7 +125,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
               </div>
             </div>
 
-            {/* 빠른 질문 */}
             <div className="quick-questions">
               <span className="label">추가 궁금증</span>
               <div className="question-chips">
@@ -146,7 +139,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ suggestion, onDismiss, onRequ
                 ))}
               </div>
             </div>
-
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
 import { reportAPI, ConsultationReport } from './api/backend';
 
 interface OverviewProps {
@@ -7,21 +7,36 @@ interface OverviewProps {
   onBack: () => void;
 }
 
+interface AssetPriceInfo {
+  name: string;
+  initialPrice: string;
+  redemptionPrice: string;
+  knockInPrice: string;
+  schedule: string;
+}
+
+interface KeyDates {
+  initialPriceDate: string;
+  firstRedemptionDate: string;
+  maturityDate: string;
+}
+
+interface ImportantItem {
+  text: string;
+  simpleExample: string;
+}
+
 interface ConsultationDetails {
   productInfo: {
     name: string;
-    investment: string;
+    branch: string;
+    date: string;
     totalAmount: string;
+    riskGrade: string;
   };
-  importantItems: Array<{
-    text: string;
-    desc: string;
-  }>;
-  expectedReturn: {
-    period: string;
-    amount: string;
-    profit: string;
-  };
+  assetInfo: AssetPriceInfo[];
+  keyDates: KeyDates;
+  importantItems: ImportantItem[];
   todoItems: string[];
 }
 
@@ -47,29 +62,53 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
     fetchConsultationReport();
   }, [consultationId]);
 
-  // 백엔드 데이터에서 UI용 상세 정보 추출 (하드코딩)
   const getConsultationDetails = (): ConsultationDetails | null => {
-    // NH내가Green초록세상예금 실제 상품 정보 기반
+    const redemptionSchedule = '90-90-85-85-80-75';
     return {
       productInfo: {
-        name: 'NH내가Green초록세상예금',
-        investment: '정기예금 (1백만원 이상)',
-        totalAmount: '720만원'
+        name: 'N2 ELS 제44회 파생결합증권',
+        branch: 'NH투자증권 Premier Blue 삼성동센터',
+        date: '2025. 10. 19.',
+        totalAmount: '10,000,000원',
+        riskGrade: '2등급 (높은 위험)',
+      },
+      assetInfo: [
+        {
+          name: 'KOSPI200',
+          initialPrice: '525.48pt',
+          redemptionPrice: '472.93pt',
+          knockInPrice: '262.74pt',
+          schedule: redemptionSchedule
+        },
+        {
+          name: 'NIKKEI225',
+          initialPrice: '47,582.15pt',
+          redemptionPrice: '42,823.94pt',
+          knockInPrice: '23,791.08pt',
+          schedule: redemptionSchedule
+        },
+        {
+          name: 'HSCEI',
+          initialPrice: '9,009.57pt',
+          redemptionPrice: '8,108.61pt',
+          knockInPrice: '4,504.79pt',
+          schedule: redemptionSchedule
+        }
+      ],
+      keyDates: {
+        initialPriceDate: '2025년 10월 17일',
+        firstRedemptionDate: '2026년 04월 15일',
+        maturityDate: '2028년 10월 17일'
       },
       importantItems: [
         {
-          text: '계좌에 압류, 가압류, 질권설정 등이 등록될 경우 원금 및 이자 지급 제한',
-          desc: '법원이나 채권자가 계좌를 막으면 돈을 찾을 수 없게 됩니다. 압류는 법원이 재산을 못 쓰게 막는 것, 가압류는 임시로 막는 것, 질권설정은 담보로 잡히는 것입니다.'
+          text: '투자기간 중 종가 기준으로 최초기준가격의 50% 미만으로 하락한 기초자산이 있는 경우 => 원금손실(손실률 = 만기평가가격이 최초기준가격 대비 가장 낮은 기초자산의 하락률)',
+          simpleExample: '예를 들어, KOSPI200 지수가 +20%, NIKKEI225 지수가 +15% 올랐어도, HSCEI 지수가 -30% 떨어지면 고객님의 손실은 -30%가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.'
         }
       ],
-      expectedReturn: {
-        period: '24개월 만기 시 (기본 2.10% + 우대 최대 0.4%)',
-        amount: '7,362,400원',
-        profit: '원금 7,200,000원 + 이자 162,400원 (세전)'
-      },
       todoItems: [
-        '온실가스 줄이기 실천 서약서 제출하기',
-        '통장 미발급 선택하여 우대금리 0.1% 받기'
+        '기초자산(KOSPI200, NIKKEI225, HSCEI) 가격 변동성 주기적으로 확인하기',
+        '다음 조기상환 평가일(2026년 04월 15일) 달력에 추가하기'
       ]
     };
   };
@@ -131,108 +170,120 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
 
       {/* Content */}
       <div className="px-4 py-6 overflow-y-auto scrollbar-hide" style={{ height: 'calc(100vh - 90px)' }}>
-        {/* Title Section */}
-        <div className="text-center mb-8">
-          <h2 className="text-xl font-bold text-black mb-2">NH내가Green초록세상예금 상담</h2>
-          <p className="text-sm text-gray-500">NH농협은행 종로금융센터 • 2025. 9. 16.</p>
-        </div>
-
-        {/* Product Info */}
+        
+        {/* Product Core Summary (New Header) */}
         <div className="bg-white rounded-lg p-4 mb-6">
-          <h3 className="text-base font-medium text-black mb-4">상품 정보</h3>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">상품명</span>
-              <span className="text-sm text-black font-medium">{details.productInfo.name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">투자 방식</span>
-              <span className="text-sm text-black font-medium">{details.productInfo.investment}</span>
-            </div>
+          <div className="text-center mb-4">
+            <h2 className="text-xl font-bold text-black mb-1">{details.productInfo.name}</h2>
+            <p className="text-sm text-gray-500">{details.productInfo.branch} • {details.productInfo.date}</p>
+          </div>
+          <div className="border-t border-gray-200 pt-4 space-y-3">
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">총 투자금액</span>
-              <span className="text-sm text-green-600 font-bold">{details.productInfo.totalAmount}</span>
+              <span className="text-sm text-blue-600 font-bold">{details.productInfo.totalAmount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">상품 위험등급</span>
+              <span className="text-sm text-red-600 font-bold">{details.productInfo.riskGrade}</span>
             </div>
           </div>
         </div>
 
-        {/* Important Notice */}
+        {/* Key Clauses Requiring Confirmation */}
         <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h3 className="text-base font-medium text-black">특별히 확인하신 내용</h3>
-          </div>
-          
+          <h3 className="text-base font-medium text-black mb-3">주요 확인 필요 조항</h3>
           <div className="space-y-3">
             {details.importantItems.map((item, index) => (
-              <div key={index} className="bg-green-50 border-l-4 border-green-600 p-3 rounded-r">
-                <h4 className="text-sm font-medium text-black mb-1">{item.text}</h4>
-                <p className="text-xs text-gray-600">{item.desc}</p>
+              <div key={index} className="bg-white border border-gray-200 rounded-lg">
+                <div className="bg-red-100 border-l-4 border-red-500 p-4">
+                  <p className="text-sm text-gray-800 font-medium">{item.text}</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold text-blue-500 mb-1">쉬운 설명</p>
+                    <p className="text-sm text-gray-700">{item.simpleExample}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Expected Returns */}
+        {/* Key Asset Prices */}
         <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h3 className="text-base font-medium text-black">예상 수익 시뮬레이션</h3>
+          <h3 className="text-base font-medium text-black mb-3">기초자산 주요 가격</h3>
+          <div className="space-y-2">
+            {details.assetInfo.map((asset, index) => (
+              <div key={index} className="bg-white rounded-lg p-4">
+                <div className="text-center font-bold text-blue-600 mb-1">{asset.name}</div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div className="text-xs text-gray-500">최초 기준가</div>
+                    <div className="text-sm font-medium text-black">{asset.initialPrice}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">조기상환가 (90%)</div>
+                    <div className="text-sm font-medium text-green-600">{asset.redemptionPrice}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">원금손실선 (50%)</div>
+                    <div className="text-sm font-medium text-red-600">{asset.knockInPrice}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          
-          <div className="bg-green-50 rounded-lg p-4 text-center">
-            <p className="text-sm text-gray-600 mb-2">{details.expectedReturn.period}</p>
-            <p className="text-2xl font-bold text-green-600 mb-1">{details.expectedReturn.amount}</p>
-            <p className="text-sm text-gray-600">{details.expectedReturn.profit}</p>
+          <div className="bg-white rounded-lg p-3 mt-2 text-center">
+            <p className="text-xs text-gray-500">상환 조건 (6개월 단위)</p>
+            <p className="text-sm font-medium text-gray-800">{details.assetInfo[0].schedule}</p>
+          </div>
+        </div>
+
+        {/* Key Dates */}
+        <div className="mb-6">
+          <h3 className="text-base font-medium text-black mb-3">주요 일정</h3>
+          <div className="bg-white rounded-lg p-4 space-y-3">
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">최초기준가격 평가일</span>
+              <span className="text-sm text-black font-medium">{details.keyDates.initialPriceDate}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">첫 조기상환 평가일</span>
+              <span className="text-sm text-black font-medium">{details.keyDates.firstRedemptionDate}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-gray-600">만기일</span>
+              <span className="text-sm text-black font-medium">{details.keyDates.maturityDate}</span>
+            </div>
           </div>
         </div>
 
         {/* Todo List */}
         <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h3 className="text-base font-medium text-black">다음에 해야 할 일</h3>
-          </div>
-          
+          <h3 className="text-base font-medium text-black mb-3">다음에 해야 할 일</h3>
           <div className="bg-white rounded-lg p-4">
             <div className="space-y-3">
               {details.todoItems.map((item, index) => (
                 <div key={index} className="flex items-center">
-                  <div className="w-4 h-4 border border-gray-300 rounded mr-3"></div>
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-3" />
                   <span className="text-sm text-gray-700">{item}</span>
                 </div>
               ))}
-            </div>
-            
-            <div className="flex space-x-3 mt-4">
-              <button className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg text-sm">
-                일정 추가
-              </button>
-              <button className="flex-1 py-3 bg-green-600 text-white rounded-lg text-sm">
-                재예약
-              </button>
             </div>
           </div>
         </div>
 
         {/* Share */}
         <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h3 className="text-base font-medium text-black">가족과 공유하기</h3>
-          </div>
-          
+          <h3 className="text-base font-medium text-black mb-3">가족과 공유하기</h3>
           <div className="bg-white rounded-lg p-4">
-            <p className="text-sm text-gray-600 text-center mb-4">
-              오늘 상담 내용을 가족에게 공유해보세요
-            </p>
-            <button className="w-full py-3 bg-green-600 text-white rounded-lg text-sm font-medium">
-              카카오톡으로 공유
-            </button>
+            <p className="text-sm text-gray-600 text-center mb-4">오늘 상담 내용을 가족에게 공유해보세요</p>
+            <button className="w-full py-3 bg-green-600 text-white rounded-lg text-sm font-medium">카카오톡으로 공유</button>
           </div>
         </div>
 
         {/* Bottom Button */}
-        <button className="w-full py-4 bg-green-600 text-white rounded-lg text-base font-medium">
-          추가 문의하기
-        </button>
+        <button className="w-full py-4 bg-blue-600 text-white rounded-lg text-base font-medium">추가 문의하기</button>
       </div>
     </div>
   );

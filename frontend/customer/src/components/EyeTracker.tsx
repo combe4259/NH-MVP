@@ -32,10 +32,17 @@ interface FaceDetectionData {
   };
 }
 
+interface FaceLandmarks {
+  landmarks: any[];
+  videoWidth: number;
+  videoHeight: number;
+}
+
 interface EyeTrackerProps {
   isTracking: boolean;
   onGazeData?: (data: GazeData) => void;
   onFaceAnalysis?: (data: FaceDetectionData) => void;
+  onFaceLandmarks?: (data: FaceLandmarks) => void;
 }
 
 const loadScript = (src: string): Promise<void> => {
@@ -48,7 +55,7 @@ const loadScript = (src: string): Promise<void> => {
   });
 };
 
-const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceAnalysis }) => {
+const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceAnalysis, onFaceLandmarks }) => {
   const [gazePosition, setGazePosition] = useState<{ x: number; y: number } | null>(null);
   const [calibrationComplete, setCalibrationComplete] = useState(false);
   const [calibrationPoints, setCalibrationPoints] = useState<number>(0);
@@ -183,7 +190,16 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
 
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       const landmarks = results.multiFaceLandmarks[0];
-      
+
+      // 랜드마크 데이터 전달 (App.tsx에서 시각화용)
+      if (onFaceLandmarks) {
+        onFaceLandmarks({
+          landmarks,
+          videoWidth,
+          videoHeight
+        });
+      }
+
       // 랜드마크 확인 (10프레임마다만 로그)
       if (Math.random() < 0.05) {
         // console.log('🔍 랜드마크 체크:', {
@@ -245,7 +261,7 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
         ctx.fill();
       }
     }
-  }, [calculateGazeDirection, onGazeData, onFaceAnalysis]);
+  }, [calculateGazeDirection, onGazeData, onFaceAnalysis, onFaceLandmarks]);
 
   // MediaPipe 초기화
   useEffect(() => {

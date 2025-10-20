@@ -211,6 +211,12 @@ class ReadingAnalysisDB(BaseModel):
     text_elements: Optional[List[Dict[str, Any]]] = None
     reading_metrics: Optional[Dict[str, Any]] = None
 
+    # 리스크 태깅 (자연어 검색용)
+    risk_tags: Optional[List[str]] = None  # ['원금손실', 'knock-in', '조기상환']
+    risk_keywords: Optional[Dict[str, float]] = None  # {'원금손실': 0.85, 'knock_in': 0.92}
+    risk_level: Optional[str] = None  # 'critical', 'high', 'medium', 'low'
+    ai_warning_given: Optional[bool] = False  # AI가 재설명 권고했는지
+
     analysis_timestamp: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
