@@ -363,35 +363,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 >
                                     듣기
                                 </button>
-                                <button 
-                                    onClick={() => {
-                                        setShowPopup(false);
-                                        // TTS 중지
-                                        if ('speechSynthesis' in window) {
-                                            window.speechSynthesis.cancel();
-                                        }
-                                    }}
-                                    style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        color: 'white',
-                                        fontSize: '18px',
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                        lineHeight: 1
-                                    }}
-                                >
-                                    ×
-                                </button>
                             </div>
                         </div>
-                        
+
                         {/* 컨텐츠 */}
                         <div style={{ padding: '16px' }}>
                             {/* 쉬운 설명 */}
                             <div style={{ marginBottom: '16px' }}>
-                                <div style={{ 
-                                    fontSize: '12px', 
+                                <div style={{
+                                    fontSize: '12px',
                                     color: '#00A651',  // NH 그린
                                     marginBottom: '8px',
                                     fontWeight: '600',
@@ -400,7 +380,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 }}>
                                     쉽게 풀어서 설명
                                 </div>
-                                <div style={{ 
+                                <div style={{
                                     fontSize: '15px',
                                     lineHeight: '1.7',
                                     color: '#1a1a1a',
@@ -414,7 +394,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                             </div>
 
                             {/* 실생활 예시 */}
-                            <div>
+                            <div style={{ marginBottom: '16px' }}>
                                 <div style={{
                                     fontSize: '12px',
                                     color: '#00A651',  // NH 그린
@@ -436,6 +416,73 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 }}>
                                     예를 들어, <strong>KOSPI200 지수가 +20%</strong>, <strong>NIKKEI225 지수가 +15%</strong> 올랐어도, <strong style={{color: '#d32f2f'}}>HSCEI 지수가 -30% 떨어지면</strong> 고객님의 손실은 <strong style={{color: '#d32f2f'}}>-30%</strong>가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.
                                 </div>
+                            </div>
+
+                            {/* 버튼 그룹 */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {/* 상담사에게 문의하기 버튼 */}
+                                <button
+                                    onClick={() => {
+                                        // 상담 요청 로직 (추후 구현)
+                                        alert('상담사 연결 기능은 추후 구현 예정입니다.');
+                                        setShowPopup(false);
+                                        // TTS 중지
+                                        if ('speechSynthesis' in window) {
+                                            window.speechSynthesis.cancel();
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        backgroundColor: 'white',
+                                        color: '#00A651',
+                                        border: '2px solid #00A651',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#f0f9f4';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'white';
+                                    }}
+                                >
+                                    상담사에게 문의하기
+                                </button>
+
+                                {/* 이해했어요 버튼 */}
+                                <button
+                                    onClick={() => {
+                                        setShowPopup(false);
+                                        // TTS 중지
+                                        if ('speechSynthesis' in window) {
+                                            window.speechSynthesis.cancel();
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px',
+                                        backgroundColor: '#00A651',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#008C44';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = '#00A651';
+                                    }}
+                                >
+                                    이해했어요
+                                </button>
                             </div>
                         </div>
                     </div>
