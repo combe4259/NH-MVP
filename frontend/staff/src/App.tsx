@@ -21,191 +21,101 @@ interface CustomerData {
   comprehensionLevel: number;
   startTime: Date;
   focusAreas: string[];
-  confusedSections: Array<{
-    section: string;
-    duration: number;
-    returnCount: number;
-  }>;
+  confusedSections: string[];  // 백엔드에서 온 confused_sections (문자열 배열)
   readingSpeed: number;
   attentionScore: number;
   riskFactors: string[];
-  recommendations: Array<{
-    priority: 'high' | 'medium' | 'low';
-    action: string;
-    reason: string;
+  recommendations: string[];  // 백엔드에서 온 recommendations (문자열 배열)
+  aiSimplifiedSections?: Array<{  // 백엔드에서 온 AI 간소화 섹션들
+    section_name: string;
+    ai_explanation: string;
+    confusion_probability: number;
   }>;
 }
 
 
 function App() {
-  const [customers, setCustomers] = useState<CustomerData[]>([
-    {
-      id: '1',
-      name: '김민수',
-      productType: 'ELS(주가연계증권)',
-      productDetails: {
-        name: 'N2 ELS 제44회 파생결합증권(주가연계증권)',
-        type: 'ELS',
-        amount: '10,000,000원',
-        period: '3년',
-        interestRate: '변동수익'
-      },
-      consultationPhase: 'terms_reading',
-      currentSection: '원금손실 조건',
-      emotionState: 'confused',
-      comprehensionLevel: 65,
-      startTime: new Date(Date.now() - 300000),
-      focusAreas: ['기초자산', '수익률'],
-      confusedSections: [
-        { section: '원금손실(손실률)은 만기평가가격이 최초기준가격 대비 가장 낮은 기초자산의 하락률만큼 발생합니다.', duration: 45, returnCount: 3 },
-        { section: '세 개의 기초자산 중 어느 하나라도 최초기준가격의 50% 미만인 경우 원금손실이 발생합니다.', duration: 30, returnCount: 2 }
-      ],
-      readingSpeed: 180,
-      attentionScore: 78,
-      riskFactors: ['원금손실 조건 미이해', '기초자산 변동성'],
-      recommendations: [
-        { priority: 'high', action: '원금 손실 조건 명확히 설명', reason: '가장 실적이 저조한 기초자산 하나로 손실이 결정됨을 강조' },
-        { priority: 'medium', action: '기초자산 예시(KOSPI, HSCEI 등)를 들어 시나리오 설명', reason: '두 개가 올라도 하나가 크게 하락 시 손실 발생 가능성 안내' },
-        { priority: 'low', action: '기초자산, 최초기준가격 등 용어 설명 준비', reason: '고객이 관련 용어에 생소함을 보임' }
-      ]
-    },
-    {
-      id: '2',
-      name: '이서연',
-      productType: '적금',
-      productDetails: {
-        name: 'NH 올원 적금',
-        type: '적금',
-        amount: '500,000원/월',
-        period: '24개월',
-        interestRate: '연 4.5%'
-      },
-      consultationPhase: 'application',
-      currentSection: '가입 신청서 작성',
-      emotionState: 'focused',
-      comprehensionLevel: 88,
-      startTime: new Date(Date.now() - 180000),
-      focusAreas: ['상품 개요', '세제 혜택'],
-      confusedSections: [],
-      readingSpeed: 220,
-      attentionScore: 92,
-      riskFactors: [],
-      recommendations: [
-        { priority: 'low', action: '자동이체 설정 안내', reason: '신청서 작성 단계 진입' },
-        { priority: 'low', action: '세제혜택 추가 설명 준비', reason: '세제 부분 높은 관심' }
-      ]
-    },
-    {
-      id: '3',
-      name: '박정호',
-      productType: '펀드',
-      productDetails: {
-        name: 'NH-Amundi 글로벌 펀드',
-        type: '펀드',
-        amount: '5,000,000원',
-        period: '자유',
-        interestRate: '변동금리'
-      },
-      consultationPhase: 'product_intro',
-      currentSection: '투자 위험 고지',
-      emotionState: 'stressed',
-      comprehensionLevel: 45,
-      startTime: new Date(Date.now() - 600000),
-      focusAreas: [],
-      confusedSections: [
-        { section: '투자 위험 등급', duration: 60, returnCount: 5 },
-        { section: '환매 수수료', duration: 50, returnCount: 4 },
-        { section: '과세 체계', duration: 40, returnCount: 3 }
-      ],
-      readingSpeed: 120,
-      attentionScore: 55,
-      riskFactors: ['투자 경험 부족', '위험 이해도 낮음', '복잡한 수수료 체계'],
-      recommendations: [
-        { priority: 'high', action: '투자 시뮬레이션 도구 활용', reason: '투자 위험 이해 어려움' },
-        { priority: 'high', action: '단계별 설명으로 전환', reason: '전반적 이해도 50% 미만' },
-        { priority: 'medium', action: '더 안전한 상품 소개 준비', reason: '스트레스 수준 높음' }
-      ]
-    }
-  ]);
-  
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(customers[0]);
+  const [customers, setCustomers] = useState<CustomerData[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
+  const [consultationId, setConsultationId] = useState<string>('');  // 백엔드에서 받아올 consultation_id
   
 
-  // 백엔드에서 데이터 가져오기
-  const fetchCustomersData = useCallback(async () => {
+  // 백엔드에서 상담 목록 가져오기
+  const fetchConsultations = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/staff/dashboard/overview`);
-      const consultations = response.data.active_consultations;
+      const response = await axios.get(`${API_BASE_URL}/consultations?status=active&limit=20`);
+      const consultations = response.data.consultations;
 
-      // 백엔드 데이터를 프론트엔드 형식에 맞게 변환
-      setCustomers(currentCustomers => currentCustomers.map(customer => {
-        const backendData = consultations.find((c: any) => c.customer_name === customer.name);
-        if (backendData) {
-          return {
-            ...customer,
-            comprehensionLevel: backendData.comprehension_level,
-            currentSection: backendData.current_section,
-            consultationPhase: backendData.consultation_phase || customer.consultationPhase,
-            emotionState: backendData.emotion_state || customer.emotionState,
-            attentionScore: backendData.attention_score || customer.attentionScore
-          };
-        }
-        return customer;
-      }));
-    } catch (error) {
-      console.error('백엔드 데이터 가져오기 실패:', error);
-      // 실패시 기존 랜덤 업데이트 로직 실행
-      setCustomers(prev => prev.map(customer => ({
-        ...customer,
-        comprehensionLevel: Math.max(0, Math.min(100, customer.comprehensionLevel + (Math.random() - 0.5) * 10)),
-        emotionState: ['neutral', 'focused', 'confused', 'stressed'][Math.floor(Math.random() * 4)] as any,
-        attentionScore: Math.max(0, Math.min(100, customer.attentionScore + (Math.random() - 0.5) * 8))
-      })));
-    }
-  }, []);
+      if (consultations && consultations.length > 0) {
+        // 첫 번째 상담의 ID 저장
+        const firstConsultationId = consultations[0].consultation_id;
+        setConsultationId(firstConsultationId);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCustomers(prevCustomers => {
-        const updatedCustomers = prevCustomers.map(customer => {
-          if (customer.id === '1') { // 김민수 고객만 업데이트
-            let newComprehensionLevel = customer.comprehensionLevel + (Math.random() - 0.5) * 4;
-            newComprehensionLevel = Math.max(5, Math.min(25, newComprehensionLevel));
+        // 각 상담에 대한 리포트 가져오기
+        const customersData = await Promise.all(
+          consultations.map(async (consultation: any) => {
+            try {
+              const reportResponse = await axios.get(
+                `${API_BASE_URL}/consultations/${consultation.consultation_id}/report`
+              );
+              const report = reportResponse.data;
 
-            let newEmotionState: 'focused' | 'confused' | 'stressed' | 'neutral';
-            if (newComprehensionLevel < 40) {
-              newEmotionState = 'confused';
-            } else if (newComprehensionLevel < 60) {
-              newEmotionState = 'confused';
-            } else if (newComprehensionLevel < 80) {
-              newEmotionState = 'neutral';
-            } else {
-              newEmotionState = 'focused';
+              return {
+                id: consultation.consultation_id,
+                name: consultation.customer_name,
+                productType: consultation.product_type,
+                productDetails: {
+                  name: consultation.product_details?.name || consultation.product_type,
+                  type: consultation.product_type,
+                  amount: consultation.product_details?.amount || '',
+                  period: consultation.product_details?.period || '',
+                  interestRate: consultation.product_details?.interest_rate || ''
+                },
+                consultationPhase: consultation.consultation_phase || 'terms_reading',
+                currentSection: consultation.product_details?.current_section || '약관 확인',
+                emotionState: 'neutral',
+                comprehensionLevel: report.comprehension_summary?.low
+                  ? (100 - (report.comprehension_summary.low / report.total_sections_analyzed * 100))
+                  : 70,
+                startTime: new Date(consultation.start_time),
+                focusAreas: [],
+                confusedSections: report.confused_sections || [],
+                readingSpeed: 180,
+                attentionScore: 75,
+                riskFactors: [],
+                recommendations: report.recommendations || [],
+                aiSimplifiedSections: report.detailed_info?.ai_simplified_sections || []
+              };
+            } catch (err) {
+              console.error(`리포트 가져오기 실패 (${consultation.consultation_id}):`, err);
+              return null;
             }
-            
-            return {
-              ...customer,
-              comprehensionLevel: newComprehensionLevel,
-              emotionState: newEmotionState,
-              attentionScore: 75 + Math.cos(Date.now() / 2500) * 20, // 55% ~ 95%
-              readingSpeed: 200 + Math.sin(Date.now() / 3000) * 50, // 150 ~ 250
-            };
-          }
-          return customer;
-        });
+          })
+        );
 
-        // selectedCustomer도 업데이트
-        const updatedSelectedCustomer = updatedCustomers.find(c => c.id === selectedCustomer?.id);
-        if (updatedSelectedCustomer) {
-          setSelectedCustomer(updatedSelectedCustomer);
+        const validCustomers = customersData.filter(c => c !== null) as CustomerData[];
+        setCustomers(validCustomers);
+
+        if (validCustomers.length > 0 && !selectedCustomer) {
+          setSelectedCustomer(validCustomers[0]);
         }
+      }
+    } catch (error) {
+      console.error('상담 목록 가져오기 실패:', error);
+    }
+  }, [selectedCustomer]);
 
-        return updatedCustomers;
-      });
-    }, 500); // 0.5초마다 업데이트
+  // 컴포넌트 마운트 시 데이터 가져오기
+  useEffect(() => {
+    fetchConsultations();
+
+    // 5초마다 데이터 갱신
+    const interval = setInterval(() => {
+      fetchConsultations();
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [selectedCustomer?.id]);
+  }, []);  // 빈 배열로 변경 - 마운트 시 한 번만 실행
 
   const getPhaseLabel = (phase: string) => {
     const labels: { [key: string]: string } = {
@@ -402,8 +312,8 @@ function App() {
                   </div>
                 </div>
 
-                {/* 어려워하는 부분 */}
-                {selectedCustomer.confusedSections.length > 0 && (
+                {/* 집중 필요 구역 - 백엔드 연결 */}
+                {selectedCustomer.confusedSections && selectedCustomer.confusedSections.length > 0 && (
                   <div className="confused-sections-card">
                     <h3 className="section-title">
                       집중 필요 구역
@@ -412,14 +322,11 @@ function App() {
                       {selectedCustomer.confusedSections.map((section, index) => (
                         <div key={index} className="confused-item-detail">
                           <div className="confused-header">
-                            <span className="confused-title">{section.section}</span>
+                            <span className="confused-title">{section}</span>
                           </div>
                           <div className="confused-stats">
                             <span className="stat">
-                              {index === 0 
-                                ? `해당 문장 10초 이상 체류, ${section.returnCount}회 반복 읽음`
-                                : `표정 분석 시 이해도 하락 보임, 15초 이상 체류`
-                              }
+                              고객이 이해하지 못한 섹션입니다. 추가 설명이 필요합니다.
                             </span>
                           </div>
                         </div>
@@ -428,33 +335,53 @@ function App() {
                   </div>
                 )}
 
-                {/* AI 상담 가이드 */}
+                {/* AI 상담 가이드 - 백엔드 연결 */}
                 <div className="ai-guide-card">
                   <h3 className="section-title">
                     AI 상담 가이드
                   </h3>
                   <div className="ai-guide-list">
-                    <div className="ai-guide-item">
-                      <span className="guide-priority" style={{ backgroundColor: '#ff4444', color: 'white' }}>긴급</span>
-                      <div className="guide-content">
-                        <div className="guide-title">원금 손실 조건 명확히 설명</div>
-                        <div className="guide-reason">가장 실적이 저조한 기초자산 하나로 손실이 결정됨을 강조</div>
-                      </div>
-                    </div>
-                    <div className="ai-guide-item">
-                      <span className="guide-priority" style={{ backgroundColor: '#ff9800', color: 'white' }}>권장</span>
-                      <div className="guide-content">
-                        <div className="guide-title">기초자산 예시(KOSPI, HSCEI 등)를 들어 시나리오 설명</div>
-                        <div className="guide-reason">두 개가 올라도 하나가 크게 하락 시 손실 발생 가능성 안내</div>
-                      </div>
-                    </div>
-                    <div className="ai-guide-item">
-                      <span className="guide-priority" style={{ backgroundColor: '#4caf50', color: 'white' }}>참고</span>
-                      <div className="guide-content">
-                        <div className="guide-title">기초자산, 최초기준가격 등 용어 설명 준비</div>
-                        <div className="guide-reason">고객이 관련 용어에 생소함을 보임</div>
-                      </div>
-                    </div>
+                    {/* AI 간소화 섹션 표시 */}
+                    {selectedCustomer.aiSimplifiedSections && selectedCustomer.aiSimplifiedSections.length > 0 ? (
+                      selectedCustomer.aiSimplifiedSections.map((section, index) => {
+                        const priority = section.confusion_probability > 0.7 ? 'high' : section.confusion_probability > 0.4 ? 'medium' : 'low';
+                        const priorityLabel = priority === 'high' ? '긴급' : priority === 'medium' ? '권장' : '참고';
+                        const priorityColor = priority === 'high' ? '#ff4444' : priority === 'medium' ? '#ff9800' : '#4caf50';
+
+                        return (
+                          <div key={index} className="ai-guide-item">
+                            <span className="guide-priority" style={{ backgroundColor: priorityColor, color: 'white' }}>
+                              {priorityLabel}
+                            </span>
+                            <div className="guide-content">
+                              <div className="guide-title">{section.section_name}</div>
+                              <div className="guide-reason" style={{ whiteSpace: 'pre-line', marginTop: '8px' }}>
+                                {section.ai_explanation}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      /* 추천사항 표시 (AI 간소화가 없을 때) */
+                      selectedCustomer.recommendations && selectedCustomer.recommendations.length > 0 ? (
+                        selectedCustomer.recommendations.map((recommendation, index) => (
+                          <div key={index} className="ai-guide-item">
+                            <span className="guide-priority" style={{ backgroundColor: '#00A651', color: 'white' }}>추천</span>
+                            <div className="guide-content">
+                              <div className="guide-reason">{recommendation}</div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="ai-guide-item">
+                          <span className="guide-priority" style={{ backgroundColor: '#4caf50', color: 'white' }}>정상</span>
+                          <div className="guide-content">
+                            <div className="guide-reason">상담이 원활하게 진행되고 있습니다.</div>
+                          </div>
+                        </div>
+                      )
+                    )}
                   </div>
                 </div>
 
@@ -490,8 +417,8 @@ function App() {
                     <div className="stat-card">
                       <div className="stat-icon">🔄</div>
                       <div className="stat-content">
-                        <div className="stat-value">{selectedCustomer.confusedSections.reduce((total, section) => total + section.returnCount, 0)}</div>
-                        <div className="stat-label">반복 읽기 횟수</div>
+                        <div className="stat-value">{selectedCustomer.confusedSections?.length || 0}</div>
+                        <div className="stat-label">혼란 섹션 수</div>
                       </div>
                     </div>
                   </div>

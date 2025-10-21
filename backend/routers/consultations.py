@@ -65,7 +65,7 @@ async def create_consultation(consultation: ConsultationCreate):
         raise HTTPException(status_code=500, detail=f"상담 생성 중 오류 발생: {str(e)}")
 
 @router.get("/{consultation_id}", response_model=ConsultationResponse)
-async def get_consultation(consultation_id: UUID4):
+async def get_consultation(consultation_id: str):
     """상담 정보 조회"""
     try:
         conn = await get_db_connection()
@@ -101,7 +101,7 @@ async def get_consultation(consultation_id: UUID4):
         raise HTTPException(status_code=500, detail="상담 조회 중 오류가 발생했습니다.")
 
 @router.get("/{consultation_id}/report", response_model=ConsultationReportResponse)
-async def get_consultation_report(consultation_id: UUID4):
+async def get_consultation_report(consultation_id: str):
     """
     상담 완료 후 리포트 생성
     """
@@ -155,26 +155,70 @@ async def get_consultation_report(consultation_id: UUID4):
             confused_sections = []
             comprehension_summary = {"high": 0, "medium": 0, "low": 0}
             detailed_analysis = []
-        
-        # 권장사항 생성
-        recommendations = []
-        if len(confused_sections) > 0:
-            recommendations.append(f"이해도가 낮았던 부분({', '.join(confused_sections[:3])})을 다시 한번 설명해주세요")
-            recommendations.append("특히 어려워했던 금융 용어들에 대한 추가 설명이 필요합니다")
-        else:
-            recommendations.append("전반적으로 잘 이해하셨습니다")
-            recommendations.append("다음 단계로 진행하셔도 좋습니다")
-        
+
         # 상담 소요 시간 계산
         duration_minutes = 0
         if consultation['start_time']:
             end_time = consultation['end_time'] or datetime.now(timezone.utc)
             duration_minutes = (end_time - consultation['start_time']).total_seconds() / 60
-        
+
         # JSONB 컬럼에서 상세 정보 가져오기
         detailed_info = {}
         if consultation.get('detailed_info'):
             detailed_info = json.loads(consultation['detailed_info'])
+
+        # AI 간소화 섹션 정보를 detailed_info에 추가
+        detailed_info['ai_simplified_sections'] = []
+
+        # AI가 생성한 추천사항 사용 (integrated_analyzer + eyetrack_service)
+        from services.integrated_analysis_service import integrated_analyzer
+        from services.eyetrack_service import eyetrack_service
+
+        # 분석 이력에서 AI 추천사항 수집
+        recommendations = []
+        ai_simplified_sections = []  # AI가 간소화한 섹션들
+
+        # eyetrack_service에서 AI 간소화 텍스트 가져오기
+        session_data = eyetrack_service.session_data.get(str(consultation_id))
+        if session_data and session_data.get('sections'):
+            for section in session_data['sections']:
+                if section.get('ai_explanation'):
+                    ai_simplified_sections.append({
+                        'section_name': section['section_name'],
+                        'ai_explanation': section['ai_explanation'],
+                        'confusion_probability': section['confusion_probability']
+                    })
+
+        # integrated_analyzer에서 추천사항 가져오기
+        if str(consultation_id) in integrated_analyzer.analysis_history:
+            history = integrated_analyzer.analysis_history[str(consultation_id)]
+
+            # 각 섹션의 분석 결과에서 추천사항 추출 (중복 제거)
+            seen_recommendations = set()
+            for entry in history:
+                # 이해도가 낮았던 섹션의 추천사항 우선
+                if entry.get('level') == 'low':
+                    rec = f"'{entry['section']}' 부분을 다시 설명해주세요 (혼란도: {entry['confusion']:.0%})"
+                    if rec not in seen_recommendations:
+                        recommendations.append(rec)
+                        seen_recommendations.add(rec)
+
+            # 전반적인 추천사항 추가
+            consultation_summary = integrated_analyzer.get_consultation_summary(str(consultation_id))
+            if consultation_summary.get('need_follow_up'):
+                recommendations.append("추가 상담이 필요합니다. 어려운 부분을 천천히 재설명해주세요.")
+
+        # AI 간소화 섹션이 있으면 추천사항에 추가하고 detailed_info에 저장
+        if ai_simplified_sections:
+            recommendations.append(f"AI가 {len(ai_simplified_sections)}개 섹션을 쉽게 설명했습니다. 고객에게 추가 설명이 필요할 수 있습니다.")
+            detailed_info['ai_simplified_sections'] = ai_simplified_sections
+
+        # 추천사항이 없으면 기본 메시지
+        if not recommendations:
+            if comprehension_summary['low'] > comprehension_summary['high']:
+                recommendations = ["상담 내용을 다시 검토하시는 것을 권장합니다."]
+            else:
+                recommendations = ["상담이 원활하게 진행되었습니다."]
 
         return ConsultationReportResponse(
             consultation_id=str(consultation_id),
@@ -185,7 +229,7 @@ async def get_consultation_report(consultation_id: UUID4):
             duration_minutes=duration_minutes,
             overall_difficulty=round(avg_difficulty, 2),
             confused_sections=confused_sections,
-            total_sections_analyzed=len(analysis_results),
+            total_sections_analyzed=len(analysis_results) if analysis_results else 0,
             comprehension_summary=comprehension_summary,
             recommendations=recommendations,
             detailed_analysis=detailed_analysis,
@@ -199,7 +243,7 @@ async def get_consultation_report(consultation_id: UUID4):
         raise HTTPException(status_code=500, detail="리포트 생성 중 오류가 발생했습니다.")
 
 @router.put("/{consultation_id}/status")
-async def update_consultation_status(consultation_id: UUID4, status: str, phase: Optional[str] = None):
+async def update_consultation_status(consultation_id: str, status: str, phase: Optional[str] = None):
     """상담 상태 업데이트"""
     try:
         valid_statuses = ["active", "paused", "completed", "cancelled"]
@@ -294,40 +338,7 @@ async def list_consultations(status: Optional[str] = None, limit: int = 20):
 
     except Exception as e:
         logger.error(f"상담 목록 조회 실패: {e}")
-        # 데이터베이스 연결 실패 시 더미 데이터 반환
-        dummy_consultations = [
-            {
-                "consultation_id": "29853704-6f54-4df2-bb40-6efa9a63cf53",
-                "customer_id": "12345678-1234-5678-9012-123456789012",
-                "customer_name": "김민수",
-                "product_type": "정기예금",
-                "consultation_phase": "terms_reading",
-                "status": "completed",
-                "start_time": "2024-09-14T10:30:00Z",
-                "end_time": "2024-09-14T11:15:00Z"
-            },
-            {
-                "consultation_id": "12345678-1234-5678-9012-123456789012",
-                "customer_id": "87654321-4321-8765-2109-876543210987",
-                "customer_name": "박영희",
-                "product_type": "펀드",
-                "consultation_phase": "completed",
-                "status": "completed",
-                "start_time": "2024-09-13T14:20:00Z",
-                "end_time": "2024-09-13T15:10:00Z"
-            }
-        ]
-
-        filtered_consultations = dummy_consultations
-        if status:
-            filtered_consultations = [c for c in dummy_consultations if c["status"] == status]
-
-        return {
-            "consultations": filtered_consultations[:limit],
-            "total_count": len(filtered_consultations),
-            "filter": status or "all",
-            "last_updated": datetime.now().isoformat()
-        }
+        raise HTTPException(status_code=500, detail="상담 목록 조회 중 오류가 발생했습니다.")
 
 @router.post("/customers", response_model=CustomerResponse)
 async def create_customer(customer: CustomerCreate):
@@ -356,7 +367,7 @@ async def create_customer(customer: CustomerCreate):
         raise HTTPException(status_code=500, detail="고객 생성 중 오류가 발생했습니다.")
 
 @router.get("/customers/{customer_id}", response_model=CustomerResponse)
-async def get_customer(customer_id: UUID4):
+async def get_customer(customer_id: str):
     """고객 정보 조회"""
     try:
         conn = await get_db_connection()
@@ -390,51 +401,21 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
     """
     conn = None
     try:
-        # 데모 시나리오용 하드코딩
-        if request.natural_language_query == "최근에 가입한 ELS 상품 보여줘":
-            logger.info("[데모 시나리오] '최근 가입 ELS 상품' 검색 실행")
-            conn = await get_db_connection()
-            consultation = await conn.fetchrow("""
-                SELECT c.*, cu.name as customer_name
-                FROM consultations c
-                JOIN customers cu ON c.customer_id = cu.id
-                WHERE c.product_details->>'name' = 'N2 ELS 제44회 파생결합증권'
-                LIMIT 1
-            """)
-            await release_db_connection(conn)
-            conn = None # Connection is released
-
-            if consultation:
-                consultation_list = [{
-                    "consultation_id": str(consultation.get('id', '')),
-                    "customer_id": str(consultation.get('customer_id', '')),
-                    "customer_name": consultation.get('customer_name', '알 수 없음'),
-                    "product_type": consultation.get('product_type', ''),
-                    "product_details": json.loads(consultation['product_details']) if consultation['product_details'] else None,
-                    "consultation_phase": consultation.get('consultation_phase', ''),
-                    "status": consultation.get('status', ''),
-                    "start_time": consultation.get('start_time').isoformat() if consultation.get('start_time') else None,
-                    "end_time": consultation.get('end_time').isoformat() if consultation.get('end_time') else None
-                }]
-                return {"consultations": consultation_list, "total_count": 1}
-            else:
-                return {"consultations": [], "total_count": 0}
-
         from services.nl_to_sql_service import NLtoSQLService
-        
+
         nl_service = NLtoSQLService()
         sql_query = await nl_service.convert_to_sql(request.natural_language_query)
-        
+
         logger.info(f"[NL검색] 자연어 쿼리: {request.natural_language_query}")
         logger.info(f"[NL검색] 변환된 SQL: {sql_query}")
-        
+
         conn = await get_db_connection()
-        
+
         if not sql_query.strip().upper().startswith("SELECT"):
             raise HTTPException(status_code=400, detail="SELECT 쿼리만 허용됩니다.")
-        
+
         consultations = await conn.fetch(sql_query)
-        
+
         consultation_list = []
         for consultation in consultations:
             consultation_list.append({
@@ -448,7 +429,7 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
                 "start_time": consultation.get('start_time').isoformat() if consultation.get('start_time') else None,
                 "end_time": consultation.get('end_time').isoformat() if consultation.get('end_time') else None
             })
-        
+
         return {
             "consultations": consultation_list,
             "total_count": len(consultation_list),
@@ -456,115 +437,14 @@ async def search_consultations_with_nl(request: NaturalLanguageSearchRequest):
             "sql_query": sql_query,
             "last_updated": datetime.now().isoformat()
         }
-        
-    except ImportError:
-        logger.error("NL to SQL 서비스를 불러올 수 없습니다.")
-        return await fallback_keyword_search(request.natural_language_query)
-        
+
+    except ImportError as e:
+        logger.error(f"NL to SQL 서비스를 불러올 수 없습니다: {e}")
+        raise HTTPException(status_code=500, detail="자연어 검색 서비스를 사용할 수 없습니다.")
+
     except Exception as e:
         logger.error(f"자연어 검색 실패: {e}")
-        return await fallback_keyword_search(request.natural_language_query)
+        raise HTTPException(status_code=500, detail=f"검색 중 오류가 발생했습니다: {str(e)}")
     finally:
         if conn:
             await release_db_connection(conn)
-
-async def fallback_keyword_search(query: str):
-    """키워드 기반 폴백 검색"""
-    try:
-        conn = await get_db_connection()
-        
-        # 키워드 추출
-        query_lower = query.lower()
-        
-        # 기본 쿼리
-        base_query = """
-            SELECT c.*, cu.name as customer_name
-            FROM consultations c
-            JOIN customers cu ON c.customer_id = cu.id
-            WHERE 1=1
-        """
-        
-        params = []
-        conditions = []
-        param_count = 1
-        
-        # 날짜 관련 키워드
-        if "오늘" in query_lower:
-            conditions.append(f"DATE(c.start_time) = CURRENT_DATE")
-        elif "어제" in query_lower:
-            conditions.append(f"DATE(c.start_time) = CURRENT_DATE - INTERVAL '1 day'")
-        elif "지난달" in query_lower:
-            conditions.append(f"DATE_TRUNC('month', c.start_time) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')")
-        elif "이번달" in query_lower:
-            conditions.append(f"DATE_TRUNC('month', c.start_time) = DATE_TRUNC('month', CURRENT_DATE)")
-        
-        # 상품 타입 키워드
-        product_keywords = {
-            "정기예금": "정기예금",
-            "예금": "정기예금",
-            "적금": "적금",
-            "펀드": "펀드",
-            "보험": "보험",
-            "대출": "대출"
-        }
-        
-        for keyword, product_type in product_keywords.items():
-            if keyword in query_lower:
-                conditions.append(f"c.product_type = ${param_count}")
-                params.append(product_type)
-                param_count += 1
-                break
-        
-        # 상태 키워드
-        if "완료" in query_lower:
-            conditions.append(f"c.status = ${param_count}")
-            params.append("completed")
-            param_count += 1
-        elif "진행" in query_lower or "활성" in query_lower:
-            conditions.append(f"c.status = ${param_count}")
-            params.append("active")
-            param_count += 1
-        
-        # 조건 결합
-        if conditions:
-            base_query += " AND " + " AND ".join(conditions)
-        
-        base_query += " ORDER BY c.start_time DESC LIMIT 20"
-        
-        # 쿼리 실행
-        consultations = await conn.fetch(base_query, *params)
-        
-        await release_db_connection(conn)
-        
-        # 결과 포맷팅
-        consultation_list = []
-        for consultation in consultations:
-            consultation_list.append({
-                "consultation_id": str(consultation['id']),
-                "customer_id": str(consultation['customer_id']),
-                "customer_name": consultation['customer_name'],
-                "product_type": consultation['product_type'],
-                "consultation_phase": consultation['consultation_phase'],
-                "status": consultation['status'],
-                "start_time": consultation['start_time'].isoformat() if consultation['start_time'] else None,
-                "end_time": consultation['end_time'].isoformat() if consultation['end_time'] else None
-            })
-        
-        return {
-            "consultations": consultation_list,
-            "total_count": len(consultation_list),
-            "natural_language_query": query,
-            "search_method": "keyword_based",  # 폴백 사용 표시
-            "last_updated": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"키워드 검색 실패: {e}")
-        # 더미 데이터 반환
-        return {
-            "consultations": [],
-            "total_count": 0,
-            "natural_language_query": query,
-            "search_method": "fallback_failed",
-            "last_updated": datetime.now().isoformat()
-        }

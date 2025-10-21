@@ -7,14 +7,24 @@ import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import '@react-pdf-viewer/search/lib/styles/index.css';
 import './PDFViewer.css';
-import './AIAssistant.css';
 
 interface PDFViewerProps {
     fileUrl: string;
     onPdfLoaded?: (textRegions: any[]) => void;
+    triggerHighlight?: boolean;
+    aiExplanation?: string;
+    confusedSections?: any[];
+    currentSentence?: string;
 }
 
-const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
+const PDFViewer: React.FC<PDFViewerProps> = ({
+    fileUrl,
+    onPdfLoaded,
+    triggerHighlight = false,
+    aiExplanation = '',
+    confusedSections = [],
+    currentSentence = ''
+}) => {
     const [showPopup, setShowPopup] = useState(false);
     const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
     const [pdfLoaded, setPdfLoaded] = useState(false);
@@ -63,12 +73,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
     }, [pdfLoaded, onPdfLoaded]);
 
     const defaultLayoutPluginInstance = defaultLayoutPlugin();
-    
-    // 하드코딩된 설명
-    const EXPLANATIONS = {
-        '원금손실': "세 개의 지수 중 두 개가 아무리 올라도 소용없습니다. 가장 많이 떨어진 지수 하나가 고객님의 최종 손실률을 결정합니다."
-    };
-    
+
     const [currentKeyword, setCurrentKeyword] = useState<string>('');
 
     const searchPluginInstance = searchPlugin({
@@ -197,30 +202,18 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
         highlightRef.current = highlight;
     }, [highlight]);
 
-    // Shift+0 키보드 이벤트로 하이라이트 토글
+    // triggerHighlight prop으로 하이라이트 제어
     useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            // Shift+0 키 감지
-            if (event.shiftKey && event.key === ')') {  // Shift+0는 ')' 문자
-                event.preventDefault();
-                setHighlightActive(prev => {
-                    // 토글 off 시 팝업도 닫기
-                    if (prev) {
-                        setShowPopup(false);
-                    }
-                    return !prev;
-                });
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, []);
+        setHighlightActive(triggerHighlight);
+        if (!triggerHighlight) {
+            setShowPopup(false);
+        }
+    }, [triggerHighlight]);
 
     // highlightActive 상태에 따라 하이라이트 실행/제거
     useEffect(() => {
         if (highlightRef.current && pdfLoaded) {
-            if (highlightActive) {
+            if (highlightActive && currentSentence) {
                 // 현재 스크롤 위치 저장
                 const viewerContainer = viewerContainerRef.current?.querySelector('.rpv-core__viewer');
                 if (viewerContainer) {
@@ -228,13 +221,12 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                 }
 
                 setTimeout(() => {
-                    // 첫 번째 줄과 두 번째 줄의 모든 키워드
-                    const keywords = [
-                        // 첫 번째 줄: 원금손실(손실률 = 만기평가가격이 최초기준가격 대비
-                        '원금손실', '(', '손실률', '=', '>', '만기평가가격', '이', '최초기준가격', '대비',
-                        // 두 번째 줄: 가장 낮은 기초자산의 하락률)
-                        '가장', '낮은', '기초자산', '의', '하락률', ')'
-                    ];
+                    // 🎯 동적 키워드 생성: 현재 읽고 있는 어려운 문장을 단어로 분리
+                    const keywords = currentSentence
+                        .split(/[\s(),=·]/)
+                        .filter(word => word.trim().length > 0);
+
+                    console.log('🎯 이해도 부족 구간 하이라이트:', keywords);
                     highlightRef.current(keywords);
 
                     // 하이라이트 후 스크롤 위치 복원
@@ -250,7 +242,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                 highlightRef.current([]);
             }
         }
-    }, [highlightActive, pdfLoaded]);
+    }, [highlightActive, pdfLoaded, currentSentence]);
 
     const handleDocumentLoad = useCallback(() => {
         setPdfLoaded(true);
@@ -326,10 +318,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 {/* TTS 재생 버튼 */}
                                 <button
                                     onClick={() => {
-                                        const explanationText = EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['원금손실'];
-                                        const exampleText = '예를 들어, KOSPI200 지수가 +20%, NIKKEI225 지수가 +15% 올랐어도, HSCEI 지수가 -30% 떨어지면 고객님의 손실은 -30%가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.';
-
-                                        const fullText = `${explanationText} ${exampleText}`;
+                                        // 🎯 AI 설명 사용 (백엔드에서 생성)
+                                        const fullText = aiExplanation || '이 부분이 어려우실 수 있습니다. 천천히 읽어보시고 궁금한 점은 문의해주세요.';
 
                                         // Web Speech API를 사용한 TTS
                                         if ('speechSynthesis' in window) {
@@ -400,43 +390,44 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl, onPdfLoaded }) => {
                                 }}>
                                     쉽게 풀어서 설명
                                 </div>
-                                <div style={{ 
+                                <div style={{
                                     fontSize: '15px',
                                     lineHeight: '1.7',
                                     color: '#1a1a1a',
                                     padding: '16px',
                                     borderRadius: '8px',
                                     borderLeft: '4px solid #00A651',  // NH 그린 강조선
-                                    fontWeight: '500'
+                                    fontWeight: '500',
+                                    whiteSpace: 'pre-line'
                                 }}>
-                                    {EXPLANATIONS[currentKeyword as keyof typeof EXPLANATIONS] || EXPLANATIONS['원금손실']}
+                                    {aiExplanation || '이 부분이 어려우실 수 있습니다. 천천히 읽어보시고 궁금한 점은 문의해주세요.'}
                                 </div>
                             </div>
 
-                            {/* 실생활 예시 */}
-                            <div>
-                                <div style={{
-                                    fontSize: '12px',
-                                    color: '#00A651',  // NH 그린
-                                    marginBottom: '8px',
-                                    fontWeight: '600',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px'
-                                }}>
-                                    실생활 예시
+                            {/* 추가 정보 (현재 읽고 있는 문장 표시) */}
+                            {currentSentence && (
+                                <div style={{ marginTop: '12px' }}>
+                                    <div style={{
+                                        fontSize: '12px',
+                                        color: '#666',
+                                        marginBottom: '8px',
+                                        fontWeight: '600'
+                                    }}>
+                                        현재 읽고 계신 부분
+                                    </div>
+                                    <div style={{
+                                        fontSize: '13px',
+                                        lineHeight: '1.6',
+                                        color: '#555',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#f5f5f5',
+                                        fontStyle: 'italic'
+                                    }}>
+                                        "{currentSentence.substring(0, 100)}{currentSentence.length > 100 ? '...' : ''}"
+                                    </div>
                                 </div>
-                                <div style={{
-                                    fontSize: '14px',
-                                    lineHeight: '1.6',
-                                    color: '#1a1a1a',
-                                    padding: '16px',
-                                    borderRadius: '8px',
-                                    boxShadow: '0 2px 8px rgba(0, 166, 81, 0.1)',  // 그린 톤 그림자
-                                    fontWeight: '400'
-                                }}>
-                                    예를 들어, <strong>KOSPI200 지수가 +20%</strong>, <strong>NIKKEI225 지수가 +15%</strong> 올랐어도, <strong style={{color: '#d32f2f'}}>HSCEI 지수가 -30% 떨어지면</strong> 고객님의 손실은 <strong style={{color: '#d32f2f'}}>-30%</strong>가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.
-                                </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 )}

@@ -30,6 +30,7 @@ interface FaceDetectionData {
     frustration: number;
     boredom: number;
   };
+  frames?: string[]; // Base64 인코딩된 프레임 데이터
 }
 
 interface FaceLandmarks {
@@ -61,7 +62,6 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
   const [calibrationPoints, setCalibrationPoints] = useState<number>(0);
   const [isMediaPipeLoaded, setIsMediaPipeLoaded] = useState(false);
   const [calibrationStep, setCalibrationStep] = useState(0);
-  const [accuracy, setAccuracy] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -435,10 +435,10 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
     }
   }, [onFaceAnalysis]);
   
-  // 프레임 시퀀스를 백엔드로 전송
+  // 프레임 시퀀스를 App.tsx로 전달 (백엔드 직접 호출 제거)
   const sendFramesToBackend = useCallback(async () => {
     if (!onFaceAnalysis) return;
-    
+
     try {
       // 프레임 데이터를 Base64로 변환
       const frames = frameBufferRef.current.map(imageData => {
@@ -452,47 +452,27 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
         }
         return '';
       }).filter(frame => frame !== '');
-      
-      // 백엔드 AI 서비스 호출
-      const response = await fetch('http://localhost:8000/api/face/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+
+      // App.tsx로 프레임 데이터 전달 (백엔드 호출은 App.tsx가 담당)
+      const faceData: FaceDetectionData = {
+        hasDetection: true,
+        confidence: 0.9,
+        emotions: {
+          engagement: 0,
+          confusion: 0, // 아직 분석 전
+          frustration: 0,
+          boredom: 0
         },
-        body: JSON.stringify({
-          frames: frames,
-          sequence_length: frameBufferSize
-        })
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        console.log('🧠 CNN-LSTM 얼굴 분석 결과:', {
-          confusion: result.confusion_probability?.toFixed(2),
-          timestamp: new Date().toLocaleTimeString()
-        });
-        
-        const confusionLevel = result.confusion || 0;
-        const normalizedConfusion = confusionLevel / 3.0;
-        
-        const faceData: FaceDetectionData = {
-          hasDetection: true,
-          confidence: result.confidence || 0.9,
-          emotions: {
-            engagement: 0,
-            confusion: normalizedConfusion,
-            frustration: 0,
-            boredom: 0
-          }
-        };
-        
-        onFaceAnalysis(faceData);
-      }
+        frames: frames // 프레임 데이터 추가
+      };
+
+      onFaceAnalysis(faceData);
+
     } catch (error) {
-      console.error('CNN-LSTM 프레임 분석 실패:', error);
+      console.error('프레임 수집 실패:', error);
     }
-    
-    // 버퍼 초기화 (다음 시퀀스를 위해)
+
+    // 버퍼 초기화
     frameBufferRef.current = [];
   }, [onFaceAnalysis]);
   
@@ -502,15 +482,12 @@ const EyeTracker: React.FC<EyeTrackerProps> = ({ isTracking, onGazeData, onFaceA
       return;
     }
     try {
-      const calculatedAccuracy = Math.random() * 15 + 80;
-      setAccuracy(calculatedAccuracy);
       setCalibrationComplete(true);
-      console.log(`✅ MediaPipe 캘리브레이션 완료, 정확도: ${calculatedAccuracy.toFixed(1)}%`);
+      console.log('✅ MediaPipe 캘리브레이션 완료');
       console.log('🎯 이제 시선 추적이 시작됩니다!');
     } catch (error) {
       console.error('캘리브레이션 완료 처리 중 오류:', error);
       setCalibrationComplete(true);
-      setAccuracy(80);
     }
   };
 

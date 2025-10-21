@@ -1,13 +1,11 @@
 """
-텍스트 난이도 + 위험도 자동 라벨링 프로그램 (듀얼 라벨러)
+텍스트 난이도 자동 라벨링 프로그램
 Google Colab에서 실행하세요.
 
 사용법:
 1. Google Colab에서 이 파일 업로드
 2. GPU 런타임 설정
 3. 실행: !python text_difficulty_labeler.py
-
-출력: 난이도(1-10) + 위험도(1-10) 동시 평가
 """
 
 import torch
@@ -115,51 +113,59 @@ class TextDifficultyLabeler:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def create_prompt(self, text):
-        """금융 문서 특화 난이도 + 위험도 듀얼 평가 프롬프트 (Gemma-2 instruction 템플릿)"""
+        """금융 문서 특화 10단계 난이도 평가 프롬프트 (단순화)"""
 
-        # Gemma-2는 <start_of_turn> 태그 사용
-        prompt = f"""<start_of_turn>user
-금융 텍스트를 난이도(1-10)와 위험도(1-10)로 평가하세요.
+        # Few-shot 방식으로 변경
+        prompt = f"""당신은 한국 금융 상품 설명서의 텍스트 난이도를 평가하는 전문가입니다.
+아래 텍스트가 일반 고객이 이해하기 얼마나 어려운지 1-10으로 평가하세요.
 
-텍스트: "{text[:300]}"
+예시:
+"은행에 돈을 맡겨요" → 1
+"통장에 이자가 붙어서 돈이 늘어났어요" → 2  
+"정기예금은 정해진 기간 동안 돈을 맡기는 상품입니다" → 3
+"자동이체를 신청하면 매달 정해진 날짜에 이체됩니다" → 4
+"예금자보호법에 따라 5천만원까지 보호됩니다" → 5
+"변동금리는 기준금리에 가산금리를 더하여 결정됩니다" → 6
+"계좌에 압류, 가압류, 질권설정 등이 등록될 경우" → 7
+"민사집행법에 따라 압류금지채권 범위 변경 신청" → 8
+"신용파생결합증권의 CDS 스프레드 변동에 따른 수익구조" → 9
+"IFRS 9 적용시 대손충당금 산출 및 Stage 분류 기준" → 10
 
-반드시 이 형식으로만 답하세요:
-난이도: [숫자]
-위험도: [숫자]<end_of_turn>
-<start_of_turn>model
-"""
+평가 기준:
+- 1-3: 일상어휘 (초등~중학생 이해 가능)
+- 4-6: 금융기본용어 (일반인 이해 가능)
+- 7-8: 법률/전문용어 (금융지식 필요)
+- 9-10: 고급전문용어 (전문가 수준)
+
+중요: 복잡한 구조, 전문용어, 숫자/비율이 많으면 난이도가 높습니다.
+
+텍스트: "{text[:600]}"
+
+난이도(1-10):"""
 
         return prompt
 
-    def get_dual_labels(self, text):
-        """텍스트 난이도 + 위험도 동시 평가"""
+    def get_difficulty(self, text):
+        """텍스트 난이도 평가 (순수 LLM 접근)"""
 
         # 여러 번 시도해서 안정적인 결과 얻기
-        difficulty_attempts = []
-        risk_attempts = []
-
+        attempts = []
         for i in range(3):  # 3번 시도
-            difficulty, risk = self._single_evaluation(text, attempt_num=i)
-            if difficulty != -1 and risk != -1:  # 유효한 응답
-                difficulty_attempts.append(difficulty)
-                risk_attempts.append(risk)
+            score = self._single_evaluation(text, attempt_num=i)
+            if score != -1:  # 유효한 응답
+                attempts.append(score)
 
         # 결과 처리
-        if not difficulty_attempts or not risk_attempts:
+        if not attempts:
             print(f"[WARNING] 모든 시도 실패, 텍스트: {text[:50]}...")
-            return 5, 5  # 완전 실패시 중간값
+            return 5  # 완전 실패시 중간값
 
         # 중앙값 반환 (outlier 제거)
-        if len(difficulty_attempts) >= 2:
-            difficulty_attempts.sort()
-            risk_attempts.sort()
-            difficulty = difficulty_attempts[len(difficulty_attempts)//2]
-            risk = risk_attempts[len(risk_attempts)//2]
-        else:
-            difficulty = difficulty_attempts[0]
-            risk = risk_attempts[0]
+        if len(attempts) >= 2:
+            attempts.sort()
+            return attempts[len(attempts)//2]
 
-        return difficulty, risk
+        return attempts[0]
 
     def _single_evaluation(self, text, attempt_num=0):
         """단일 평가 시도"""
@@ -189,14 +195,13 @@ class TextDifficultyLabeler:
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=50,       # 50으로 넉넉하게 증가
+                    max_new_tokens=5,        # 여유있게 5로 증가
                     temperature=temperature,
                     do_sample=(temperature > 0.1),
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
-                    top_k=50,                # 10 → 50으로 증가 (다양성)
-                    top_p=0.95,              # 0.9 → 0.95로 증가
-                    repetition_penalty=1.1   # 반복 방지
+                    top_k=10,                # 상위 10개 토큰만
+                    top_p=0.9
                 )
 
             # 디코딩
@@ -207,47 +212,42 @@ class TextDifficultyLabeler:
 
             # 디버깅 (필요시)
             if attempt_num == 0:  # 첫 시도만 출력
-                print(f"[DEBUG] Response: '{response}' for: {text[:30]}...")
-                # pass
+                # print(f"[DEBUG] Response: '{response}' for: {text[:30]}...")
+                pass
 
-            # 듀얼 파싱 - 난이도와 위험도 추출
+            # 파싱 - 더 유연하게
+            # 정확한 매칭 우선
+            if response == '10':
+                return 10
+            elif response in '123456789':
+                return int(response)
+
+            # 숫자로 시작하는 경우
+            if response and response[0] == '1' and len(response) >= 2 and response[1] == '0':
+                return 10
+            elif response and response[0] in '123456789':
+                return int(response[0])
+
+            # 숫자가 포함된 경우 - 더 안전하게
             import re
+            match = re.search(r'\d+', response)
+            if match:
+                num = int(match.group())
+                # 1-10 범위만 허용
+                if 1 <= num <= 10:
+                    return num
+                else:
+                    # 범위 밖이면 가장 가까운 값으로 클리핑
+                    if attempt_num == 0:
+                        print(f"[WARNING] 범위 밖 난이도 {num} → 클리핑")
+                    return min(max(num, 1), 10)
 
-            # "난이도: X\n위험도: Y" 형식 파싱
-            match_difficulty = re.search(r'난이도:\s*(\d+)', response)
-            match_risk = re.search(r'위험도:\s*(\d+)', response)
-
-            if match_difficulty and match_risk:
-                difficulty = int(match_difficulty.group(1))
-                risk = int(match_risk.group(1))
-
-                # 1-10 범위 체크
-                difficulty = min(max(difficulty, 1), 10)
-                risk = min(max(risk, 1), 10)
-
-                return difficulty, risk
-
-            # 파싱 실패 시 대안 시도 (숫자 2개 찾기)
-            numbers = re.findall(r'\d+', response)
-            if len(numbers) >= 2:
-                difficulty = int(numbers[0])
-                risk = int(numbers[1])
-
-                # 1-10 범위 체크
-                difficulty = min(max(difficulty, 1), 10)
-                risk = min(max(risk, 1), 10)
-
-                if attempt_num == 0:
-                    print(f"[WARNING] 형식 불일치, 숫자로 파싱: 난이도={difficulty}, 위험도={risk}")
-
-                return difficulty, risk
-
-            return -1, -1  # 파싱 실패
+            return -1  # 파싱 실패
 
         except Exception as e:
             if attempt_num == 0:
                 print(f"[ERROR] 평가 실패: {e}")
-            return -1, -1
+            return -1
 
     def label_texts(self, texts, batch_save=10, checkpoint_path=None):
         """
@@ -275,13 +275,12 @@ class TextDifficultyLabeler:
                 continue
 
             try:
-                # 난이도 + 위험도 동시 평가
-                difficulty, risk_level = self.get_dual_labels(text)
+                # 난이도 평가
+                difficulty = self.get_difficulty(text)
 
                 result = {
                     'text': text,
                     'difficulty': difficulty,
-                    'risk_level': risk_level,
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
 
@@ -339,21 +338,20 @@ class TextDifficultyLabeler:
         df.to_excel(excel_path, index=False, engine='openpyxl')
         print(f"✅ Excel 저장: {excel_path}")
 
-        # JSON 저장 (Fine-tuning용 - 듀얼 라벨)
+        # JSON 저장 (Fine-tuning용)
         json_data = []
         for _, row in df.iterrows():
             json_data.append({
                 "text": row['text'],
-                "difficulty": int(row['difficulty']),  # 1-10
-                "difficulty_name": self._get_difficulty_name(int(row['difficulty'])),
-                "risk_level": int(row['risk_level']),  # 1-10
-                "risk_name": self._get_risk_name(int(row['risk_level']))
+                "label": int(row['difficulty']) - 1,  # 0-9로 변환 (0-indexed)
+                "difficulty": int(row['difficulty']),  # 원본 유지 (1-10)
+                "difficulty_name": self._get_difficulty_name(int(row['difficulty']))
             })
 
-        json_path = os.path.join(output_dir, f'dual_training_data_{timestamp}.json')
+        json_path = os.path.join(output_dir, f'training_data_{timestamp}.json')
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, ensure_ascii=False, indent=2)
-        print(f"✅ JSON 저장 (듀얼 라벨): {json_path}")
+        print(f"✅ JSON 저장: {json_path}")
 
         return csv_path, excel_path, json_path
 
@@ -372,22 +370,6 @@ class TextDifficultyLabeler:
             10: "전문가-최상"
         }
         return names.get(level, f"Level {level}")
-
-    def _get_risk_name(self, level):
-        """위험도 레벨에 대한 이름 반환"""
-        names = {
-            1: "위험 없음",
-            2: "극히 낮은 위험",
-            3: "낮은 위험",
-            4: "약간 낮은 위험",
-            5: "보통 위험",
-            6: "약간 높은 위험",
-            7: "높은 위험",
-            8: "매우 높은 위험",
-            9: "치명적 위험",
-            10: "극도로 치명적"
-        }
-        return names.get(level, f"Risk {level}")
 
     def visualize_results(self, save_path=None):
         """결과 시각화"""
@@ -882,7 +864,7 @@ def extract_texts_from_multiple_pdfs(pdf_paths, split_mode='smart'):
         texts = extract_texts_from_pdf(pdf_path, split_mode)
         all_texts.extend(texts)
 
-    print(f"\n전체 추출 결과:")
+    print(f"\n📊 전체 추출 결과:")
     print(f"   • PDF 파일 수: {len(pdf_paths)}개")
     print(f"   • 총 텍스트 세그먼트: {len(all_texts)}개")
 
@@ -896,23 +878,26 @@ def main():
     try:
         from google.colab import drive
         drive.mount('/content/drive')
-        print(" Google Drive 마운트 완료")
+        print("✅ Google Drive 마운트 완료")
         is_colab = True
     except:
-        print(" 로컬 환경에서 실행 중...")
+        print("⚠️ 로컬 환경에서 실행 중...")
         is_colab = False
 
     # PDF 지원 확인
     if not PDF_SUPPORT:
-        print("\n PDF 처리를 위해 설치:")
+        print("\n📌 PDF 처리를 위해 설치:")
         print("   !pip install pdfplumber")
 
     # 설정
-    HF_TOKEN = None  # Colab에서 이미 로그인했으면 None, 로컬에서는 토큰 입력
+    HF_TOKEN = "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"  # 환경 변수나 별도 파일에서 로드하세요
 
     # 모델 선택 (하나만 주석 해제)
     #MODEL_NAME = "google/gemma-2-2b-it"  # 기존 (2B)
     MODEL_NAME = "google/gemma-2-9b-it"  # 더 큰 Gemma (9B) ⭐
+    # MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3"  # Mistral (7B)
+    # MODEL_NAME = "microsoft/Phi-3.5-mini-instruct"  # Phi (3.8B)
+    # MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"  # Llama (3B)
 
     # 출력 디렉토리 설정
     if is_colab:
@@ -926,7 +911,7 @@ def main():
     # 라벨러 초기화
     labeler = TextDifficultyLabeler(
         model_name=MODEL_NAME,
-        hf_token=HF_TOKEN  # None이면 기존 로그인 세션 사용
+        hf_token=HF_TOKEN  # None이면 환경변수에서 자동으로 찾음
     )
 
     # ===== 텍스트 준비 =====
@@ -954,7 +939,7 @@ def main():
 
     # 폴더 목록
     folders = [
-        "/content/drive/MyDrive/NH상품설명서",
+        "/content/drive/MyDrive/ELS",
         "/content/drive/MyDrive/대출",
         "/content/drive/MyDrive/대출 약관",
         "/content/drive/MyDrive/외환",

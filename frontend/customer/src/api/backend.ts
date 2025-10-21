@@ -44,7 +44,6 @@ export interface ConfusionStatus {
     explanation: string;
     simpleExample?: string;
   };
-  difficult_terms: any[];
 }
 
 export interface ReadingProgress {
@@ -80,12 +79,6 @@ export const customerAPI = {
   // 텍스트 읽기 분석
   async analyzeReading(data: AnalysisRequest) {
     const response = await api.post('/api/eyetracking/analyze', data);
-    return response.data;
-  },
-
-  // AI 도우미 상태 조회
-  async getAIStatus(consultationId: string) {
-    const response = await api.get(`/api/eyetracking/ai-status/${consultationId}`);
     return response.data;
   },
 

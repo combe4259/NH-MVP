@@ -35,53 +35,56 @@ class IntegratedAnalysisService:
         consultation_id: str,
         section_name: str,
         section_text: str,
-        text_difficulty: float,
         face_data: Optional[Dict] = None,
         gaze_data: Optional[Dict] = None,
         reading_time: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         통합 분석 수행
-        
+
         Args:
             consultation_id: 상담 ID
             section_name: 섹션 이름
             section_text: 섹션 텍스트
-            text_difficulty: 텍스트 난이도 (0-1)
             face_data: 얼굴 분석 데이터
             gaze_data: 시선 추적 데이터
             reading_time: 읽기 시간 (초)
-            
+
         Returns:
             통합 분석 결과
         """
-        
-        # 1. 각 모달리티별 혼란도 계산
+
+        # 1. 텍스트 난이도 분석 (AI 모델 사용)
+        from services.ai_model_service import ai_model_manager
+        text_difficulty = await ai_model_manager.hf_models.analyze_difficulty(section_text)
+        logger.info(f"📝 텍스트 난이도 분석 완료: {text_difficulty:.2f}")
+
+        # 2. 각 모달리티별 혼란도 계산
         text_confusion = self._calculate_text_confusion(text_difficulty, section_text)
-        face_confusion = self._calculate_face_confusion(face_data)
+        face_confusion = await self._calculate_face_confusion(face_data)
         gaze_confusion = self._calculate_gaze_confusion(gaze_data, reading_time, len(section_text))
-        
-        # 2. 통합 혼란도 계산
+
+        # 3. 통합 혼란도 계산
         integrated_confusion = self._calculate_integrated_confusion(
             text_confusion, face_confusion, gaze_confusion
         )
-        
-        # 3. 이해도 레벨 결정
+
+        # 4. 이해도 레벨 결정
         comprehension_level, need_ai_help = self._determine_comprehension_level(
             integrated_confusion, face_confusion, gaze_confusion
         )
-        
-        # 4. AI 간소화 필요 여부 판단
+
+        # 5. AI 간소화 필요 여부 판단
         should_simplify = self._should_trigger_simplification(
             integrated_confusion, face_confusion, gaze_confusion, text_difficulty
         )
-        
-        # 5. 추천사항 생성
+
+        # 6. 추천사항 생성
         recommendations = self._generate_recommendations(
             comprehension_level, text_confusion, face_confusion, gaze_confusion
         )
-        
-        # 6. 분석 이력 저장
+
+        # 7. 분석 이력 저장
         self._save_analysis_history(
             consultation_id, section_name, integrated_confusion, comprehension_level
         )
@@ -124,35 +127,65 @@ class IntegratedAnalysisService:
         return result
     
     def _calculate_text_confusion(self, difficulty: float, text: str) -> float:
-        """텍스트 기반 혼란도 계산"""
-        base_confusion = difficulty
-        
-        # 금융 전문 용어 체크
-        complex_terms = [
-            '압류', '가압류', '질권', '양도', '상계',
-            '연체이자', '가산금리', '변동금리', '고정금리',
-            '중도상환수수료', '만기일시상환', '원리금균등상환'
-        ]
-        
-        term_count = sum(1 for term in complex_terms if term in text)
-        term_penalty = min(term_count * 0.05, 0.2)  # 최대 0.2 추가
-        
-        return min(base_confusion + term_penalty, 1.0)
+        """텍스트 기반 혼란도 계산 - AI 모델(KLUE-BERT) 결과 사용"""
+        # AI 난이도 분석 모델(combe4259/difficulty_klue)이 이미 텍스트 난이도를 분석했으므로
+        # 추가적인 수동 보정 없이 AI 결과를 그대로 사용
+        return difficulty
     
-    def _calculate_face_confusion(self, face_data: Optional[Dict]) -> float:
-        """얼굴 표정 기반 혼란도 계산 - CNN-LSTM 결과 사용"""
+    async def _calculate_face_confusion(self, face_data: Optional[Dict]) -> float:
+        """얼굴 표정 기반 혼란도 계산 - HuggingFace CNN-LSTM 결과 사용"""
         if not face_data:
             return 0.0
-        
-        # CNN-LSTM에서 나온 confusion 값 직접 사용
+
+        # 프론트엔드에서 프레임 데이터가 온 경우 -> HuggingFace 모델로 분석
+        frames = face_data.get('frames')
+        if frames and len(frames) >= 30:
+            try:
+                from services.ai_model_service import ai_model_manager
+                import base64
+                import numpy as np
+                import cv2
+
+                logger.info(f"📹 얼굴 프레임 {len(frames)}개 수신 -> HuggingFace 모델 분석 시작")
+
+                # HuggingFace confusion_tracker 사용
+                if ai_model_manager.hf_models and ai_model_manager.hf_models.confusion_tracker:
+                    tracker = ai_model_manager.hf_models.confusion_tracker
+
+                    # Base64 프레임들을 numpy 배열로 변환하고 순차 처리
+                    for frame_b64 in frames[:30]:
+                        try:
+                            # Base64 디코딩
+                            img_data = base64.b64decode(frame_b64.split(',')[1] if ',' in frame_b64 else frame_b64)
+                            nparr = np.frombuffer(img_data, np.uint8)
+                            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                            if frame is not None:
+                                # process_frame으로 프레임 처리
+                                tracker.process_frame(frame)
+                        except Exception as e:
+                            logger.warning(f"프레임 디코딩 실패: {e}")
+                            continue
+
+                    # 최종 혼란도 확률 가져오기
+                    confusion_prob = tracker.confusion_probability
+                    logger.info(f"🧠 HuggingFace 모델 분석 완료 - Confusion: {confusion_prob:.2f}")
+                    return float(confusion_prob)
+                else:
+                    logger.warning("HuggingFace confusion_tracker가 없음")
+
+            except Exception as e:
+                logger.error(f"❌ 얼굴 프레임 분석 실패: {e}", exc_info=True)
+                # 실패 시 기존 로직으로 폴백
+
+        # 이미 분석된 confusion 값이 있는 경우 (기존 로직)
         confusion_prob = face_data.get('confusion_probability', 0.0)
-        
-        # emotions 딕셔너리에서도 confusion 확인 (WebcamFaceDetection에서 오는 경우)
+
+        # emotions 딕셔너리에서도 confusion 확인
         emotions = face_data.get('emotions', {})
         if emotions and 'confusion' in emotions:
-            # 새로운 CNN-LSTM 기반 값 우선 사용
             return emotions.get('confusion', confusion_prob)
-        
+
         return confusion_prob
     
     def _calculate_gaze_confusion(self, gaze_data: Optional[Dict], 

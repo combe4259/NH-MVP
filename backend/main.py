@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from routers import eyetracking, staff, consultations, face_router
+from routers import eyetracking, staff, consultations
+#face_router
 import json
 import asyncio
 from typing import Dict, List
@@ -11,19 +12,6 @@ import base64
 import os
 from models.database import startup_database, shutdown_database
 
-# 텍스트 분석 모듈 임포트
-try:
-    from routers import text_analysis
-    TEXT_ANALYSIS_AVAILABLE = True
-except ImportError as e:
-    TEXT_ANALYSIS_AVAILABLE = False
-
-# 얼굴 분석 모듈 임포트
-try:
-    from routers import face_analysis
-    FACE_ANALYSIS_AVAILABLE = True
-except ImportError as e:
-    FACE_ANALYSIS_AVAILABLE = False
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 logging.basicConfig(level=logging.INFO)
@@ -59,15 +47,8 @@ app.add_middleware(
 app.include_router(eyetracking.router, prefix="/api/eyetracking", tags=["아이트래킹"])
 app.include_router(staff.router, prefix="/api/staff", tags=["직원용"])
 app.include_router(consultations.router, prefix="/api/consultations", tags=["상담관리"])
-app.include_router(face_router.router)
 
-# 텍스트 분석 라우터 조건부 등록
-if TEXT_ANALYSIS_AVAILABLE:
-    app.include_router(text_analysis.router, prefix="/api/text", tags=["텍스트분석"])
 
-# 얼굴 분석 라우터 조건부 등록
-if FACE_ANALYSIS_AVAILABLE:
-    app.include_router(face_analysis.router, prefix="/api/face", tags=["얼굴분석"])
 
 @app.get("/")
 async def root():
@@ -76,11 +57,9 @@ async def root():
         "version": "1.0.0",
         "status": "활성",
         "endpoints": {
-            "아이트래킹 분석": "/api/eyetracking/analyze",
+            "통합 분석 (텍스트+얼굴+시선)": "/api/eyetracking/analyze",
             "직원 모니터링": "/api/staff/realtime/{consultation_id}",
-            "상담 리포트": "/api/consultations/{consultation_id}/report",
-            "얼굴 분석": "/api/face/analyze-frame",
-            "텍스트 분석": "/api/text/analyze-text"
+            "상담 리포트": "/api/consultations/{consultation_id}/report"
         }
     }
 
@@ -135,26 +114,23 @@ async def websocket_endpoint(websocket: WebSocket, consultation_id: str):
             
             # 메시지 타입별 처리
             if message.get("type") == "eyetracking":
-                # 아이트래킹 데이터 처리
+                # 아이트래킹 데이터 처리 (레거시 - HTTP API 사용 권장)
                 section_text = message.get("section_text", "")
                 reading_time = message.get("reading_time", 0)
                 gaze_data = message.get("gaze_data", {})
-                
+
                 # 텍스트 난이도 분석 (KLUE-BERT)
-                if ai_model_manager and ai_model_manager.current_model:
-                    difficulty = await ai_model_manager.current_model.analyze_difficulty(section_text)
-                    confused_sections = await ai_model_manager.current_model.identify_confused_sections(section_text)
+                if ai_model_manager and ai_model_manager.hf_models:
+                    difficulty = await ai_model_manager.hf_models.analyze_difficulty(section_text)
                 else:
                     difficulty = 0.5
-                    confused_sections = []
-                
+
                 response = {
                     "type": "difficulty_analysis",
                     "difficulty_score": difficulty,
-                    "confused_sections": confused_sections,
                     "timestamp": message.get("timestamp")
                 }
-                
+
                 await manager.send_personal_message(json.dumps(response), websocket)
                 
             elif message.get("type") == "face_frame":
@@ -199,40 +175,15 @@ async def websocket_endpoint(websocket: WebSocket, consultation_id: str):
                 section_text = message.get("section_text", "")
                 reading_time = message.get("reading_time", 0)
                 gaze_data = message.get("gaze_data", {})
-                frame_data = message.get("face_frame", "")
-                
-                # 얼굴 프레임 디코딩
-                frame = None
-                if frame_data:
-                    try:
-                        img_bytes = base64.b64decode(frame_data)
-                        nparr = np.frombuffer(img_bytes, np.uint8)
-                        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    except:
-                        frame = None
-                
-                # 얼굴 분석 데이터 처리
-                face_data = None
-                if frame is not None:
-                    # face_service를 통해 얼굴 분석
-                    try:
-                        from services.face_service import face_service
-                        face_result = await face_service.analyze_face(frame)
-                        face_data = {
-                            'confusion_probability': face_result.get('confusion_detected', 0.0),
-                            'emotions': face_result.get('emotions', {})
-                        }
-                    except Exception as e:
-                        logger.error(f"얼굴 분석 실패: {e}")
-                
-                # 통합 분석 수행
+                face_data = message.get("face_data", None)  # 프론트엔드에서 이미 분석된 데이터
+
                 analysis_result = await eyetrack_service.analyze_reading_session(
                     consultation_id=consultation_id,
                     section_name=message.get("section_name", "unknown"),
                     section_text=section_text,
                     reading_time=reading_time,
                     gaze_data=gaze_data,
-                    face_data=face_data  # 얼굴 분석 데이터 전달
+                    face_data=face_data
                 )
                 
                 # 분석 결과 전송
