@@ -191,7 +191,7 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
 
         {/* Key Clauses Requiring Confirmation */}
         <div className="mb-6">
-          <h3 className="text-base font-medium text-black mb-3">주요 확인 필요 조항</h3>
+          <h3 className="text-base font-medium text-black mb-3">핵심 위험 사항</h3>
           <div className="space-y-3">
             {details.importantItems.map((item, index) => (
               <div key={index} className="bg-white border border-gray-200 rounded-lg">
