@@ -63,53 +63,77 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
   }, [consultationId]);
 
   const getConsultationDetails = (): ConsultationDetails | null => {
-    const redemptionSchedule = '90-90-85-85-80-75';
+    if (!consultationReport) return null;
+
+    const productDetails = consultationReport.product_details || {};
+    const detailedInfo = (consultationReport as any).detailed_info || {};
+    const aiSimplifiedSections = detailedInfo.ai_simplified_sections || [];
+
+    const importantItems: ImportantItem[] = [];
+    const detailedAnalysis = (consultationReport as any).detailed_analysis || [];
+
+    // AI 쉬운 설명을 받았던 섹션 중에서 고위험인 것만 추출
+    aiSimplifiedSections.forEach((aiSection: any) => {
+      // detailed_analysis에서 해당 섹션 찾기
+      const matchedSection = detailedAnalysis.find(
+        (section: any) => section.section_name === aiSection.section_name
+      );
+
+      // 조건: 고객이 어려워했고 (confusion > 0.6) + 고위험 문장 (critical/high)
+      if (
+        aiSection.confusion_probability > 0.6 &&
+        matchedSection &&
+        (matchedSection.risk_level === 'critical' || matchedSection.risk_level === 'high')
+      ) {
+        importantItems.push({
+          text: matchedSection.section_text || aiSection.section_name,
+          simpleExample: aiSection.ai_explanation
+        });
+      }
+    });
+
+    // 상품 정보 파싱
+    const productName = productDetails.name || consultationReport.product_type;
+    const branch = productDetails.branch || 'NH투자증권';
+    const totalAmount = productDetails.totalAmount || productDetails.amount || '정보 없음';
+    const riskGrade = productDetails.riskGrade || '정보 없음';
+
+    // 자산 정보 파싱
+    const assetInfo: AssetPriceInfo[] = [];
+    if (productDetails.assets && Array.isArray(productDetails.assets)) {
+      productDetails.assets.forEach((asset: any) => {
+        assetInfo.push({
+          name: asset.name,
+          initialPrice: asset.initialPrice || '',
+          redemptionPrice: asset.redemptionPrice || '',
+          knockInPrice: asset.knockInPrice || '',
+          schedule: asset.schedule || ''
+        });
+      });
+    }
+
+    // 주요 일정 파싱
+    const keyDates: KeyDates = {
+      initialPriceDate: productDetails.initialPriceDate || '',
+      firstRedemptionDate: productDetails.firstRedemptionDate || '',
+      maturityDate: productDetails.maturityDate || ''
+    };
+
+    // 할 일 목록 (추천사항 활용)
+    const todoItems = consultationReport.recommendations || [];
+
     return {
       productInfo: {
-        name: 'N2 ELS 제44회 파생결합증권',
-        branch: 'NH투자증권 Premier Blue 삼성동센터',
-        date: '2025. 10. 19.',
-        totalAmount: '10,000,000원',
-        riskGrade: '2등급 (높은 위험)',
+        name: productName,
+        branch: branch,
+        date: new Date(consultationReport.start_time).toLocaleDateString('ko-KR'),
+        totalAmount: totalAmount,
+        riskGrade: riskGrade,
       },
-      assetInfo: [
-        {
-          name: 'KOSPI200',
-          initialPrice: '525.48pt',
-          redemptionPrice: '472.93pt',
-          knockInPrice: '262.74pt',
-          schedule: redemptionSchedule
-        },
-        {
-          name: 'NIKKEI225',
-          initialPrice: '47,582.15pt',
-          redemptionPrice: '42,823.94pt',
-          knockInPrice: '23,791.08pt',
-          schedule: redemptionSchedule
-        },
-        {
-          name: 'HSCEI',
-          initialPrice: '9,009.57pt',
-          redemptionPrice: '8,108.61pt',
-          knockInPrice: '4,504.79pt',
-          schedule: redemptionSchedule
-        }
-      ],
-      keyDates: {
-        initialPriceDate: '2025년 10월 17일',
-        firstRedemptionDate: '2026년 04월 15일',
-        maturityDate: '2028년 10월 17일'
-      },
-      importantItems: [
-        {
-          text: '투자기간 중 종가 기준으로 최초기준가격의 50% 미만으로 하락한 기초자산이 있는 경우 => 원금손실(손실률 = 만기평가가격이 최초기준가격 대비 가장 낮은 기초자산의 하락률)',
-          simpleExample: '예를 들어, KOSPI200 지수가 +20%, NIKKEI225 지수가 +15% 올랐어도, HSCEI 지수가 -30% 떨어지면 고객님의 손실은 -30%가 됩니다. 가장 안 좋은 하나의 결과가 전체 손실을 결정합니다.'
-        }
-      ],
-      todoItems: [
-        '기초자산(KOSPI200, NIKKEI225, HSCEI) 가격 변동성 주기적으로 확인하기',
-        '다음 조기상환 평가일(2026년 04월 15일) 달력에 추가하기'
-      ]
+      assetInfo,
+      keyDates,
+      importantItems,
+      todoItems
     };
   };
 
@@ -191,7 +215,7 @@ const Overview: React.FC<OverviewProps> = ({ consultationId, onBack }) => {
 
         {/* Key Clauses Requiring Confirmation */}
         <div className="mb-6">
-          <h3 className="text-base font-medium text-black mb-3">주요 확인 필요 조항</h3>
+          <h3 className="text-base font-medium text-black mb-3">핵심 위험 사항</h3>
           <div className="space-y-3">
             {details.importantItems.map((item, index) => (
               <div key={index} className="bg-white border border-gray-200 rounded-lg">

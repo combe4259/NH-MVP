@@ -140,15 +140,31 @@ async def get_consultation_report(consultation_id: str):
                 "low": len([r for r in analysis_results if r['comprehension_level'] == 'low'])
             }
             
-            # 상세 분석 결과
+            # 상세 분석 결과 + 리스크 분석
+            from services.risk_analyzer import risk_analyzer
+
             detailed_analysis = []
             for result in analysis_results:
+                section_text = result.get('section_text', '')
+
+                # 리스크 분석 수행
+                risk_info = risk_analyzer.analyze_text(section_text) if section_text else {
+                    'risk_score': 0.0,
+                    'risk_level': 'low',
+                    'risk_keywords': {},
+                    'risk_tags': []
+                }
+
                 detailed_analysis.append({
                     "section_name": result['section_name'],
+                    "section_text": section_text,
                     "difficulty_score": float(result['difficulty_score'] or 0),
                     "confusion_probability": float(result['confusion_probability'] or 0),
                     "comprehension_level": result['comprehension_level'],
-                    "analysis_timestamp": result['analysis_timestamp'].isoformat()
+                    "analysis_timestamp": result['analysis_timestamp'].isoformat(),
+                    "risk_score": risk_info['risk_score'],
+                    "risk_level": risk_info['risk_level'],
+                    "risk_tags": risk_info['risk_tags']
                 })
         else:
             avg_difficulty = 0.0
